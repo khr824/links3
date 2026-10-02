@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeachLinks - Classroom Link-in-Bio</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Alpine.js for lightweight state management -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        playful: ['Fredoka', 'sans-serif'],
+                    },
+                    colors: {
+                        chalkboard: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            accent: '#38bdf8'
+                        },
+                        notebook: {
+                            paper: '#fcfbf7',
+                            line: '#e2e8f0',
+                            margin: '#f87171'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 999px;
+        }
+
+        /* Animations */
+        @keyframes popIn {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop-in {
+            animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Phone frame preview wrapper on desktop */
+        .mobile-frame-container {
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Notebook theme line effects */
+        .theme-notebook-bg {
+            background-color: #fdfbf7;
+            background-image: linear-gradient(#e2e8f0 1px, transparent 1px);
+            background-size: 100% 28px;
+        }
+    </style>
+</head>
+
+<body x-data="teachBioApp()" x-init="init()" class="bg-slate-900 text-slate-800 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white pb-12">
+
+    <!-- Top Admin & View Controls (Teacher Mode Switcher) -->
+    <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-40 shadow-md">
+        <div class="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-white">
+            
+            <!-- Brand Logo / Info -->
+            <div class="flex items-center space-x-2">
+                <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold">
+                    <i class="fa-solid fa-apple-whole text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-sm tracking-wide flex items-center gap-1.5">
+                        TeachLinks <span class="text-xs bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded">Bio Organiser</span>
+                    </h1>
+                </div>
+            </div>
+
+            <!-- Global Action Controls -->
+            <div class="flex items-center gap-2">
+                <!-- Teacher vs Student Toggle -->
+                <button @click="isTeacherMode = !isTeacherMode" 
+                        :class="isTeacherMode ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 shadow-sm active:scale-95">
+                    <i :class="isTeacherMode ? 'fa-solid fa-user-gear' : 'fa-solid fa-graduation-cap'"></i>
+                    <span x-text="isTeacherMode ? 'Teacher Edit Mode' : 'Student Preview Mode'"></span>
+                </button>
+
+                <!-- Copy Bio Link Button -->
+                <button @click="copyBioLink()" 
+                        class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95"
+                        title="Copy Bio Page Link">
+                    <i class="fa-solid fa-share-nodes text-indigo-400"></i>
+                    <span class="hidden sm:inline">Share Link</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Teacher Quick Theme Switcher Bar (Only in Teacher Mode) -->
+        <div x-show="isTeacherMode" x-transition class="bg-slate-850 border-t border-slate-700/60 px-4 py-2 text-xs">
+            <div class="max-w-4xl mx-auto flex items-center justify-between overflow-x-auto gap-2">
+                <span class="text-slate-400 text-xs font-medium shrink-0 flex items-center gap-1">
+                    <i class="fa-solid fa-palette text-amber-400"></i> Theme:
+                </span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button @click="setTheme('modern')" 
+                            :class="theme === 'modern' ? 'ring-2 ring-indigo-400 font-bold text-white bg-indigo-900/40' : 'text-slate-300 bg-slate-700/50 hover:bg-slate-700'"
+                            class="px-2.5 py-1 rounded-md text-xs transition">✨ Modern Clean</button>
+                    <button @click="setTheme('chalkboard')" 
+                            :class="theme === 'chalkboard' ? 'ring-2 ring-emerald-400 font-bold text-white bg-emerald-900/40' : 'text-slate-300 bg-slate-700/50 hover:bg-slate-700'"
+                            class="px-2.5 py-1 rounded-md text-xs transition">🏫 Chalkboard</button>
+                    <button @click="setTheme('pastel')" 
+                            :class="theme === 'pastel' ? 'ring-2 ring-pink-400 font-bold text-white bg-pink-900/40' : 'text-slate-300 bg-slate-700/50 hover:bg-slate-700'"
+                            class="px-2.5 py-1 rounded-md text-xs transition">🌸 Pastel Class</button>
+                    <button @click="setTheme('notebook')" 
+                            :class="theme === 'notebook' ? 'ring-2 ring-amber-400 font-bold text-white bg-amber-900/40' : 'text-slate-300 bg-slate-700/50 hover:bg-slate-700'"
+                            class="px-2.5 py-1 rounded-md text-xs transition">📝 Notebook</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Classroom Bio Container (Styled as Mobile View Card) -->
+    <main class="mt-4 sm:mt-6 px-2 sm:px-4">
+        
+        <div class="mobile-frame-container rounded-3xl overflow-hidden transition-all duration-300 min-h-[750px] flex flex-col shadow-2xl"
+             :class="getThemeContainerClass()">
+            
+            <!-- Mobile Preview Top Notch / Bar (Simulated Phone Display Header) -->
+            <div class="py-2 px-6 flex items-center justify-between text-xs opacity-60 border-b border-black/5 select-none">
+                <span class="font-semibold text-[10px] tracking-wider uppercase">Classroom Bio</span>
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-wifi text-[10px]"></i>
+                    <i class="fa-solid fa-battery-three-quarters text-[10px]"></i>
+                </div>
+            </div>
+
+            <div class="p-4 sm:p-6 flex-1 flex flex-col">
+                
+                <!-- Profile Header -->
+                <div class="text-center relative mb-6">
+                    <!-- Edit Profile Trigger (Teacher Mode Only) -->
+                    <button x-show="isTeacherMode" 
+                            @click="showProfileModal = true"
+                            class="absolute top-0 right-0 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 p-2 rounded-full transition text-xs"
+                            title="Edit Profile Details">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+
+                    <!-- Avatar / Preset Icon -->
+                    <div class="relative inline-block mb-3">
+                        <div class="w-24 h-24 rounded-full mx-auto flex items-center justify-center text-4xl shadow-lg ring-4 ring-white dark:ring-slate-800 bg-gradient-to-tr from-indigo-500 to-purple-500 text-white overflow-hidden">
+                            <template x-if="profile.avatarType === 'emoji'">
+                                <span x-text="profile.avatarVal"></span>
+                            </template>
+                            <template x-if="profile.avatarType === 'image'">
+                                <img :src="profile.avatarVal" @error="$el.src='https://placehold.co/100x100/6366f1/ffffff?text=Teacher'" class="w-full h-full object-cover" alt="Profile Photo">
+                            </template>
+                        </div>
+                        <span class="absolute bottom-1 right-1 bg-emerald-500 text-white p-1 rounded-full text-xs ring-2 ring-white dark:ring-slate-800" title="Active Classroom">
+                            <i class="fa-solid fa-check text-[10px]"></i>
+                        </span>
+                    </div>
+
+                    <!-- Name & Title -->
+                    <h2 class="text-2xl font-bold font-playful tracking-tight" x-text="profile.name || 'Ms. Johnson'"></h2>
+                    <p class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mt-0.5" x-text="profile.gradeSubject || '7th Grade Science'"></p>
+                    
+                    <!-- Bio Text -->
+                    <div class="mt-3 max-w-sm mx-auto">
+                        <p class="text-xs sm:text-sm leading-relaxed opacity-80 bg-black/5 dark:bg-white/5 p-3 rounded-xl border border-black/5 dark:border-white/5" x-text="profile.bio"></p>
+                    </div>
+                </div>
+
+                <!-- TOP SPACE TO ADD A NEW LINK (Visible in Teacher Mode) -->
+                <div x-show="isTeacherMode" 
+                     x-transition 
+                     class="mb-6 p-4 rounded-2xl bg-indigo-50 dark:bg-slate-800/90 border-2 border-indigo-200 dark:border-indigo-500/30 shadow-md">
+                    
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-plus text-indigo-500 text-sm"></i> Add New Link / Resource
+                        </h3>
+                        <span class="text-[10px] text-slate-500 dark:text-slate-400 italic">Appends to bottom</span>
+                    </div>
+
+                    <form @submit.prevent="addNewLink()" class="space-y-3">
+                        <!-- Resource Title Input -->
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Resource Title *</label>
+                            <input type="text" 
+                                   x-model="newLink.title" 
+                                   placeholder="e.g., Chapter 4 Homework Packet" 
+                                   required 
+                                   class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <!-- URL Input -->
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Target Web URL *</label>
+                            <input type="url" 
+                                   x-model="newLink.url" 
+                                   placeholder="https://classroom.google.com/..." 
+                                   required 
+                                   class="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <!-- Category / Icon Selector -->
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Category</label>
+                                <select x-model="newLink.category" 
+                                        class="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <template x-for="cat in categories" :key="cat.name">
+                                        <option :value="cat.name" x-text="cat.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Icon Style</label>
+                                <select x-model="newLink.icon" 
+                                        class="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <template x-for="ic in iconOptions" :key="ic.class">
+                                        <option :value="ic.class" x-text="ic.label"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Add Button -->
+                        <button type="submit" 
+                                class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all duration-150 flex items-center justify-center gap-2 active:scale-98">
+                            <i class="fa-solid fa-plus"></i> Add Link to Bottom of List
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Category Filter Pills -->
+                <div class="mb-4">
+                    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                        <button @click="activeCategory = 'All'" 
+                                :class="activeCategory === 'All' ? 'bg-indigo-600 text-white font-bold' : 'bg-black/5 dark:bg-white/10 opacity-70 hover:opacity-100'"
+                                class="px-3 py-1 rounded-full text-xs whitespace-nowrap transition">
+                            All Links
+                        </button>
+                        <template x-for="cat in categories" :key="cat.name">
+                            <button @click="activeCategory = cat.name" 
+                                    :class="activeCategory === cat.name ? 'bg-indigo-600 text-white font-bold' : 'bg-black/5 dark:bg-white/10 opacity-70 hover:opacity-100'"
+                                    class="px-3 py-1 rounded-full text-xs whitespace-nowrap transition flex items-center gap-1">
+                                <span x-text="cat.icon"></span>
+                                <span x-text="cat.label"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- LINKS LIST CONTAINER -->
+                <div class="space-y-3 flex-1">
+                    
+                    <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider opacity-60 mb-1 px-1">
+                        <span>Classroom Resources</span>
+                        <span x-text="filteredLinks.length + ' Item(s)'"></span>
+                    </div>
+
+                    <!-- Empty State -->
+                    <template x-if="filteredLinks.length === 0">
+                        <div class="text-center py-10 px-4 rounded-2xl border-2 border-dashed border-black/10 dark:border-white/10">
+                            <i class="fa-solid fa-folder-open text-3xl opacity-30 mb-2"></i>
+                            <p class="text-xs font-semibold opacity-60">No links in this category yet.</p>
+                            <p class="text-[11px] opacity-40 mt-1" x-show="isTeacherMode">Use the top form to add new classroom links!</p>
+                        </div>
+                    </template>
+
+                    <!-- Dynamically Stacked Cards (Each newly added link renders at the BOTTOM) -->
+                    <template x-for="(link, index) in filteredLinks" :key="link.id">
+                        <div class="group relative rounded-2xl transition-all duration-200 border transform active:scale-98 animate-pop-in"
+                             :class="getCardStyleClass()">
+                            
+                            <!-- Main Link Clickable Card -->
+                            <div class="p-3.5 flex items-center justify-between gap-3">
+                                
+                                <!-- Icon & Editable Title Section -->
+                                <a :href="link.url" 
+                                   target="_blank" 
+                                   rel="noopener noreferrer" 
+                                   @click="registerClick(link.id)"
+                                   class="flex items-center gap-3 flex-1 min-w-0 group-hover:opacity-90">
+                                    
+                                    <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 text-lg">
+                                        <i :class="link.icon || 'fa-solid fa-link'"></i>
+                                    </div>
+
+                                    <div class="min-w-0 flex-1">
+                                        <!-- Editable Title Indicator in Teacher Mode or Plain Text in Student View -->
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-semibold text-sm leading-snug truncate" x-text="link.title"></span>
+                                            <i class="fa-solid fa-up-right-from-square text-[10px] opacity-40"></i>
+                                        </div>
+
+                                        <div class="flex items-center gap-2 text-[11px] opacity-60 mt-0.5">
+                                            <span x-text="link.category" class="font-medium"></span>
+                                            <span class="text-[9px]">•</span>
+                                            <span x-text="formatDomain(link.url)" class="truncate max-w-[120px]"></span>
+                                        </div>
+                                    </div>
+                                </a>
+
+                                <!-- Teacher Controls (Only shown in Teacher Mode) -->
+                                <div x-show="isTeacherMode" class="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl shrink-0">
+                                    
+                                    <!-- Inline Quick Edit Title -->
+                                    <button @click.stop="openEditModal(link)" 
+                                            class="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-lg text-xs text-slate-600 dark:text-slate-300" 
+                                            title="Edit Title & Link">
+                                        <i class="fa-solid fa-pen"></i>
+                                    </button>
+
+                                    <!-- Reorder Up -->
+                                    <button @click.stop="moveLink(link.id, 'up')" 
+                                            :disabled="index === 0"
+                                            :class="index === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300'"
+                                            class="p-1.5 rounded-lg text-xs" 
+                                            title="Move Up">
+                                        <i class="fa-solid fa-arrow-up"></i>
+                                    </button>
+
+                                    <!-- Reorder Down -->
+                                    <button @click.stop="moveLink(link.id, 'down')" 
+                                            :disabled="index === filteredLinks.length - 1"
+                                            :class="index === filteredLinks.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300'"
+                                            class="p-1.5 rounded-lg text-xs" 
+                                            title="Move Down">
+                                        <i class="fa-solid fa-arrow-down"></i>
+                                    </button>
+
+                                    <!-- Delete Link -->
+                                    <button @click.stop="deleteLink(link.id)" 
+                                            class="p-1.5 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs" 
+                                            title="Delete Link">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Clicks Badge in Teacher Mode -->
+                                <div x-show="isTeacherMode" class="text-[10px] font-mono opacity-50 px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5" title="Student clicks">
+                                    <i class="fa-solid fa-chart-line text-[9px] mr-0.5"></i>
+                                    <span x-text="link.clicks || 0"></span>
+                                </div>
+
+                            </div>
+                        </div>
+                    </template>
+
+                </div>
+
+                <!-- Footer Sign-off -->
+                <div class="mt-8 pt-4 border-t border-black/5 dark:border-white/5 text-center text-[11px] opacity-50">
+                    <p x-text="profile.name + ' • Classroom Resource Bio'"></p>
+                    <p class="text-[9px] mt-0.5">Always opens links in a new window</p>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- EDIT LINK MODAL -->
+    <div x-show="showEditModal" 
+         x-transition.opacity 
+         class="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        
+        <div @click.away="showEditModal = false" class="bg-white dark:bg-slate-800 text-slate-800 dark:text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-indigo-500"></i> Edit Resource Link
+                </h3>
+                <button @click="showEditModal = false" class="text-slate-400 hover:text-slate-600 text-xs">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <template x-if="editingLink">
+                <form @submit.prevent="saveEditedLink()" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Title</label>
+                        <input type="text" x-model="editingLink.title" required class="w-full px-3 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">URL (Opens in new tab)</label>
+                        <input type="url" x-model="editingLink.url" required class="w-full px-3 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold mb-1">Category</label>
+                            <select x-model="editingLink.category" class="w-full px-2.5 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900">
+                                <template x-for="cat in categories" :key="cat.name">
+                                    <option :value="cat.name" x-text="cat.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold mb-1">Icon</label>
+                            <select x-model="editingLink.icon" class="w-full px-2.5 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900">
+                                <template x-for="ic in iconOptions" :key="ic.class">
+                                    <option :value="ic.class" x-text="ic.label"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-2">
+                        <button type="button" @click="showEditModal = false" class="px-3 py-1.5 rounded-lg text-xs bg-slate-200 dark:bg-slate-700">Cancel</button>
+                        <button type="submit" class="px-4 py-1.5 rounded-lg text-xs bg-indigo-600 text-white font-bold">Save Changes</button>
+                    </div>
+                </form>
+            </template>
+        </div>
+    </div>
+
+    <!-- EDIT PROFILE MODAL -->
+    <div x-show="showProfileModal" 
+         x-transition.opacity 
+         class="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        
+        <div @click.away="showProfileModal = false" class="bg-white dark:bg-slate-800 text-slate-800 dark:text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-user-pen text-indigo-500"></i> Edit Teacher Profile
+                </h3>
+                <button @click="showProfileModal = false" class="text-slate-400 hover:text-slate-600 text-xs">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="saveProfile()" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Teacher Name</label>
+                    <input type="text" x-model="profileForm.name" required class="w-full px-3 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Grade & Subject</label>
+                    <input type="text" x-model="profileForm.gradeSubject" required class="w-full px-3 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Classroom Bio / Welcome Message</label>
+                    <textarea x-model="profileForm.bio" rows="3" class="w-full px-3 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Avatar Type</label>
+                        <select x-model="profileForm.avatarType" class="w-full px-2 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900">
+                            <option value="emoji">Emoji Avatar</option>
+                            <option value="image">Image URL</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1" x-text="profileForm.avatarType === 'emoji' ? 'Select Emoji' : 'Image URL'"></label>
+                        <input type="text" x-model="profileForm.avatarVal" class="w-full px-3 py-2 text-xs rounded-lg border dark:border-slate-600 dark:bg-slate-900">
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" @click="showProfileModal = false" class="px-3 py-1.5 rounded-lg text-xs bg-slate-200 dark:bg-slate-700">Cancel</button>
+                    <button type="submit" class="px-4 py-1.5 rounded-lg text-xs bg-indigo-600 text-white font-bold">Update Profile</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div x-show="toast.show" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-y-4"
+         x-transition:enter-end="opacity-100 transform translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 transform translate-y-0"
+         x-transition:leave-end="opacity-0 transform translate-y-4"
+         class="fixed bottom-4 right-4 z-50 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-2 text-xs font-medium">
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span x-text="toast.message"></span>
+    </div>
+
+    <script>
+        function teachBioApp() {
+            return {
+                isTeacherMode: true,
+                theme: 'modern',
+                activeCategory: 'All',
+                
+                showEditModal: false,
+                showProfileModal: false,
+                editingLink: null,
+
+                toast: {
+                    show: false,
+                    message: ''
+                },
+
+                // Profile State
+                profile: {
+                    name: 'Ms. Sarah Johnson',
+                    gradeSubject: '7th Grade Science • Room 204',
+                    bio: 'Welcome students & parents! Access our weekly homework portals, syllabus, lab schedules, and tutoring sign-ups here.',
+                    avatarType: 'emoji',
+                    avatarVal: '👩‍🏫'
+                },
+
+                profileForm: {},
+
+                // Form for adding new link (At TOP of view)
+                newLink: {
+                    title: '',
+                    url: '',
+                    category: '📚 Homework',
+                    icon: 'fa-solid fa-book-open'
+                },
+
+                // Pre-populated default categories
+                categories: [
+                    { name: '📚 Homework', label: 'Homework', icon: '📚' },
+                    { name: '🗓️ Schedule', label: 'Schedule', icon: '🗓️' },
+                    { name: '📧 Contact', label: 'Contact', icon: '📧' },
+                    { name: '📝 Syllabus', label: 'Syllabus', icon: '📝' },
+                    { name: '💻 Portal', label: 'Portals', icon: '💻' },
+                    { name: '🎨 Projects', label: 'Projects', icon: '🎨' }
+                ],
+
+                // Preset icon choices
+                iconOptions: [
+                    { label: 'Book / Reading', class: 'fa-solid fa-book-open' },
+                    { label: 'Calendar / Schedule', class: 'fa-solid fa-calendar-days' },
+                    { label: 'Envelope / Mail', class: 'fa-solid fa-envelope' },
+                    { label: 'File / Document', class: 'fa-solid fa-file-lines' },
+                    { label: 'Laptop / Portal', class: 'fa-solid fa-laptop-code' },
+                    { label: 'Palette / Art', class: 'fa-solid fa-palette' },
+                    { label: 'Chalkboard / Class', class: 'fa-solid fa-chalkboard-user' },
+                    { label: 'Star / Important', class: 'fa-solid fa-star' },
+                    { label: 'Microscope / Science', class: 'fa-solid fa-flask' }
+                ],
+
+                // Preset classroom links
+                links: [
+                    {
+                        id: 1,
+                        title: 'Google Classroom Science Portal',
+                        url: 'https://classroom.google.com',
+                        category: '💻 Portal',
+                        icon: 'fa-solid fa-laptop-code',
+                        clicks: 124
+                    },
+                    {
+                        id: 2,
+                        title: 'Weekly Science Homework & Reading Log',
+                        url: 'https://docs.google.com',
+                        category: '📚 Homework',
+                        icon: 'fa-solid fa-book-open',
+                        clicks: 88
+                    },
+                    {
+                        id: 3,
+                        title: 'Course Syllabus & Safety Expectations',
+                        url: 'https://example.com/syllabus',
+                        category: '📝 Syllabus',
+                        icon: 'fa-solid fa-file-lines',
+                        clicks: 42
+                    },
+                    {
+                        id: 4,
+                        title: 'Schedule Parent-Teacher Office Hours',
+                        url: 'https://calendly.com',
+                        category: '🗓️️ Schedule',
+                        icon: 'fa-solid fa-calendar-days',
+                        clicks: 31
+                    }
+                ],
+
+                init() {
+                    // Load saved state from LocalStorage if available
+                    const savedProfile = localStorage.getItem('teachlinks_profile');
+                    if (savedProfile) {
+                        try { this.profile = JSON.parse(savedProfile); } catch(e){}
+                    }
+
+                    const savedLinks = localStorage.getItem('teachlinks_links');
+                    if (savedLinks) {
+                        try { this.links = JSON.parse(savedLinks); } catch(e){}
+                    }
+
+                    const savedTheme = localStorage.getItem('teachlinks_theme');
+                    if (savedTheme) {
+                        this.theme = savedTheme;
+                    }
+
+                    this.profileForm = { ...this.profile };
+                },
+
+                // Theme styling helper functions
+                setTheme(themeName) {
+                    this.theme = themeName;
+                    localStorage.setItem('teachlinks_theme', themeName);
+                    this.showToast(`Theme changed to ${themeName}`);
+                },
+
+                getThemeContainerClass() {
+                    switch (this.theme) {
+                        case 'chalkboard':
+                            return 'bg-slate-900 text-slate-100 border-4 border-amber-900/60 shadow-2xl';
+                        case 'pastel':
+                            return 'bg-gradient-to-b from-pink-50 via-purple-50 to-indigo-50 text-slate-800 border-2 border-pink-200/80';
+                        case 'notebook':
+                            return 'theme-notebook-bg text-slate-800 border-l-8 border-l-red-400 border-y border-r border-slate-300';
+                        case 'modern':
+                        default:
+                            return 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-800';
+                    }
+                },
+
+                getCardStyleClass() {
+                    switch (this.theme) {
+                        case 'chalkboard':
+                            return 'bg-slate-800/90 border-slate-700 hover:border-emerald-400 text-emerald-100';
+                        case 'pastel':
+                            return 'bg-white/90 border-pink-200 hover:border-indigo-300 text-slate-800 shadow-sm';
+                        case 'notebook':
+                            return 'bg-white border-slate-300 border-b-2 hover:border-slate-400 text-slate-800 shadow-xs';
+                        case 'modern':
+                        default:
+                            return 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500';
+                    }
+                },
+
+                // Filtered Links Computed Property
+                get filteredLinks() {
+                    if (this.activeCategory === 'All') {
+                        return this.links;
+                    }
+                    return this.links.filter(l => l.category === this.activeCategory);
+                },
+
+                // ADD LINK ACTION (Input is at top, appends at BOTTOM)
+                addNewLink() {
+                    if (!this.newLink.title || !this.newLink.url) return;
+
+                    // Ensure valid protocol on URL
+                    let formattedUrl = this.newLink.url.trim();
+                    if (!/^https?:\/\//i.test(formattedUrl) && !/^mailto:/i.test(formattedUrl)) {
+                        formattedUrl = 'https://' + formattedUrl;
+                    }
+
+                    const item = {
+                        id: Date.now(),
+                        title: this.newLink.title.trim(),
+                        url: formattedUrl,
+                        category: this.newLink.category,
+                        icon: this.newLink.icon || 'fa-solid fa-link',
+                        clicks: 0
+                    };
+
+                    // Appends newly added link to the VERY BOTTOM of the list array
+                    this.links.push(item);
+                    this.saveLinks();
+
+                    // Reset Top Form
+                    this.newLink.title = '';
+                    this.newLink.url = '';
+
+                    // Ensure active category displays all or newly added category
+                    this.activeCategory = 'All';
+
+                    this.showToast('New link appended to bottom!');
+                },
+
+                // Move Link position in array
+                moveLink(id, direction) {
+                    const idx = this.links.findIndex(l => l.id === id);
+                    if (idx === -1) return;
+
+                    if (direction === 'up' && idx > 0) {
+                        const temp = this.links[idx];
+                        this.links[idx] = this.links[idx - 1];
+                        this.links[idx - 1] = temp;
+                    } else if (direction === 'down' && idx < this.links.length - 1) {
+                        const temp = this.links[idx];
+                        this.links[idx] = this.links[idx + 1];
+                        this.links[idx + 1] = temp;
+                    }
+                    this.saveLinks();
+                },
+
+                // Delete Link
+                deleteLink(id) {
+                    this.links = this.links.filter(l => l.id !== id);
+                    this.saveLinks();
+                    this.showToast('Link removed');
+                },
+
+                // Edit Link Modal
+                openEditModal(link) {
+                    this.editingLink = JSON.parse(JSON.stringify(link));
+                    this.showEditModal = true;
+                },
+
+                saveEditedLink() {
+                    if (!this.editingLink) return;
+                    
+                    const idx = this.links.findIndex(l => l.id === this.editingLink.id);
+                    if (idx !== -1) {
+                        this.links[idx] = { ...this.editingLink };
+                        this.saveLinks();
+                        this.showToast('Link updated successfully');
+                    }
+                    this.showEditModal = false;
+                },
+
+                // Save Profile Modal
+                saveProfile() {
+                    this.profile = { ...this.profileForm };
+                    localStorage.setItem('teachlinks_profile', JSON.stringify(this.profile));
+                    this.showProfileModal = false;
+                    this.showToast('Teacher profile updated');
+                },
+
+                // Register Link Click
+                registerClick(id) {
+                    const idx = this.links.findIndex(l => l.id === id);
+                    if (idx !== -1) {
+                        this.links[idx].clicks = (this.links[idx].clicks || 0) + 1;
+                        this.saveLinks();
+                    }
+                },
+
+                // LocalStorage Helper
+                saveLinks() {
+                    localStorage.setItem('teachlinks_links', JSON.stringify(this.links));
+                },
+
+                // Utility: Extract domain name for subtitle display
+                formatDomain(urlStr) {
+                    try {
+                        const u = new URL(urlStr);
+                        return u.hostname.replace('www.', '');
+                    } catch(e) {
+                        return urlStr;
+                    }
+                },
+
+                // Copy Link to Clipboard
+                copyBioLink() {
+                    const textToCopy = window.location.href;
+                    
+                    // Fallback copy mechanism for iframe sandboxes
+                    const el = document.createElement('textarea');
+                    el.value = textToCopy;
+                    document.body.appendChild(el);
+                    el.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(el);
+
+                    this.showToast('Classroom link copied to clipboard!');
+                },
+
+                // Toast Helper
+                showToast(msg) {
+                    this.toast.message = msg;
+                    this.toast.show = true;
+                    setTimeout(() => {
+                        this.toast.show = false;
+                    }, 2500);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
