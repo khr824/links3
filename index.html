@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TeachLinks - Classroom Link-in-Bio</title>
+    <title>TeachLinks - Cloud Teacher Bio & Link Organizer</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -16,9 +16,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Alpine.js for interactive state -->
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -27,16 +24,6 @@
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
                         playful: ['Fredoka', 'sans-serif'],
-                    },
-                    colors: {
-                        teacher: {
-                            blue: '#3b82f6',
-                            mint: '#10b981',
-                            coral: '#f43f5e',
-                            purple: '#8b5cf6',
-                            yellow: '#f59e0b',
-                            slate: '#475569',
-                        }
                     }
                 }
             }
@@ -44,7 +31,6 @@
     </script>
 
     <style>
-        /* Custom scrollbar styling */
         ::-webkit-scrollbar {
             width: 6px;
         }
@@ -56,7 +42,6 @@
             border-radius: 999px;
         }
 
-        /* Animations */
         @keyframes popIn {
             0% { transform: scale(0.96); opacity: 0; }
             100% { transform: scale(1); opacity: 1; }
@@ -65,525 +50,600 @@
             animation: popIn 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
 
-        /* Mobile preview container layout */
         .mobile-frame-container {
-            max-width: 460px;
+            max-width: 480px;
             margin-left: auto;
             margin-right: auto;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
         }
 
-        /* Custom Notebook Line BG */
         .theme-notebook-bg {
             background-color: #fdfbf7;
             background-image: linear-gradient(#e2e8f0 1px, transparent 1px);
             background-size: 100% 28px;
         }
-
-        /* Dynamic color glow classes */
-        .color-swatch-ring {
-            box-shadow: 0 0 0 2px white, 0 0 0 4px currentColor;
-        }
     </style>
 </head>
 
-<body x-data="teachBioApp()" x-init="init()" class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white pb-12">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased pb-12 selection:bg-indigo-500 selection:text-white">
 
-    <!-- Top Navigation & Mode Bar -->
-    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-lg">
-        <div class="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-white">
-            
-            <!-- App Identity -->
-            <div class="flex items-center space-x-2">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md">
-                    <i class="fa-solid fa-graduation-cap text-base"></i>
-                </div>
-                <div>
-                    <h1 class="font-bold text-sm tracking-wide flex items-center gap-1.5">
-                        TeachLinks <span class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded font-mono">Mobile Bio</span>
-                    </h1>
-                </div>
-            </div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            GoogleAuthProvider, 
+            signInWithPopup, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDoc, 
+            setDoc, 
+            onSnapshot 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-            <!-- Global Action Controls -->
-            <div class="flex items-center gap-2">
-                <!-- Teacher vs Student Toggle -->
-                <button @click="isTeacherMode = !isTeacherMode" 
-                        :class="isTeacherMode ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'"
-                        class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 shadow-sm active:scale-95">
-                    <i :class="isTeacherMode ? 'fa-solid fa-user-gear' : 'fa-solid fa-eye'"></i>
-                    <span x-text="isTeacherMode ? 'Teacher Edit Mode' : 'Student View Mode'"></span>
-                </button>
+        // Global Firebase state & configs
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'teacher-link-bio-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyDemoConfigOnlyForFallback",
+            authDomain: "demo.firebaseapp.com",
+            projectId: "demo-app",
+            storageBucket: "demo.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:demo"
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-                <!-- Share / QR Button -->
-                <button @click="showQrModal = true" 
-                        class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95"
-                        title="Show Shareable QR Code & Link">
-                    <i class="fa-solid fa-qrcode text-indigo-400"></i>
-                    <span class="hidden sm:inline">Share Bio</span>
-                </button>
-            </div>
-        </div>
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-        <!-- Teacher Theme Picker Bar (Visible in Teacher Mode) -->
-        <div x-show="isTeacherMode" x-transition class="bg-slate-900/90 border-t border-slate-800/80 px-4 py-2 text-xs">
-            <div class="max-w-4xl mx-auto flex items-center justify-between overflow-x-auto gap-3">
-                <span class="text-slate-400 text-xs font-medium shrink-0 flex items-center gap-1.5">
-                    <i class="fa-solid fa-paint-roller text-amber-400"></i> Theme Style:
-                </span>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button @click="setTheme('modern')" 
-                            :class="theme === 'modern' ? 'ring-2 ring-indigo-400 font-bold text-white bg-indigo-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
-                            class="px-2.5 py-1 rounded-md text-xs transition">✨ Modern Dark</button>
-                    <button @click="setTheme('classroom')" 
-                            :class="theme === 'classroom' ? 'ring-2 ring-emerald-400 font-bold text-white bg-emerald-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
-                            class="px-2.5 py-1 rounded-md text-xs transition">🏫 Classroom Light</button>
-                    <button @click="setTheme('pastel')" 
-                            :class="theme === 'pastel' ? 'ring-2 ring-pink-400 font-bold text-white bg-pink-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
-                            class="px-2.5 py-1 rounded-md text-xs transition">🌸 Soft Pastel</button>
-                    <button @click="setTheme('notebook')" 
-                            :class="theme === 'notebook' ? 'ring-2 ring-amber-400 font-bold text-white bg-amber-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
-                            class="px-2.5 py-1 rounded-md text-xs transition">📝 Paper Notebook</button>
-                </div>
-            </div>
-        </div>
-    </header>
+        // Expose Firebase tools to global scope for UI handlers
+        window.FB = {
+            auth,
+            db,
+            appId,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            doc,
+            setDoc,
+            onSnapshot,
+            currentUser: null
+        };
 
-    <!-- Main Mobile Bio Container Frame -->
-    <main class="mt-4 sm:mt-6 px-2 sm:px-4">
-        
-        <div class="mobile-frame-container rounded-3xl overflow-hidden transition-all duration-300 min-h-[780px] flex flex-col border border-slate-800"
-             :class="getThemeContainerClass()">
-            
-            <!-- Simulated Mobile Header Top Notch -->
-            <div class="py-2.5 px-6 flex items-center justify-between text-xs opacity-60 border-b border-black/5 dark:border-white/5 select-none">
-                <span class="font-semibold text-[10px] tracking-widest uppercase flex items-center gap-1">
-                    <i class="fa-solid fa-apple-whole text-indigo-400"></i> Teacher Resource Hub
-                </span>
-                <div class="flex items-center gap-1.5">
-                    <i class="fa-solid fa-wifi text-[10px]"></i>
-                    <i class="fa-solid fa-battery-full text-[10px]"></i>
-                </div>
-            </div>
+        // Initialize Authentication
+        async function initAuth() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else if (!auth.currentUser) {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.warn("Auth initialization fallback:", err);
+                if (!auth.currentUser) {
+                    try { await signInAnonymously(auth); } catch(e){}
+                }
+            }
+        }
 
-            <div class="p-4 sm:p-6 flex-1 flex flex-col">
+        initAuth();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+    <div x-data="teachBioApp()" x-init="initApp()" class="min-h-screen flex flex-col">
+
+        <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-xl">
+            <div class="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-white">
                 
-                <!-- Teacher Profile Header -->
-                <div class="text-center relative mb-6">
-                    <!-- Edit Profile Button in Teacher Mode -->
-                    <button x-show="isTeacherMode" 
-                            @click="showProfileModal = true"
-                            class="absolute top-0 right-0 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 dark:text-indigo-400 p-2 rounded-full transition text-xs"
-                            title="Edit Teacher Profile">
-                        <i class="fa-solid fa-user-pen"></i>
+                <!-- App Identity -->
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white font-bold shadow-md">
+                        <i class="fa-solid fa-graduation-cap text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-sm tracking-wide flex items-center gap-1.5">
+                            TeachLinks <span class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded font-mono">Cloud Bio</span>
+                        </h1>
+                        <p class="text-[10px] text-slate-400">Classroom Resource Hub</p>
+                    </div>
+                </div>
+
+                <!-- User Account / Google Sign-In Bar -->
+                <div class="flex items-center gap-2">
+                    <template x-if="user && !user.isAnonymous">
+                        <div class="flex items-center gap-2 bg-slate-800 border border-slate-700/80 px-2.5 py-1 rounded-xl">
+                            <img :src="user.photoURL || 'https://placehold.co/100x100/6366f1/ffffff?text=U'" 
+                                 class="w-6 h-6 rounded-full ring-2 ring-indigo-400 object-cover" 
+                                 alt="User Photo">
+                            <div class="text-left hidden sm:block">
+                                <p class="text-[11px] font-bold text-slate-200 leading-none truncate max-w-[120px]" x-text="user.displayName || 'Teacher'"></p>
+                                <p class="text-[9px] text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Cloud Synced
+                                </p>
+                            </div>
+                            <button @click="googleSignOut()" 
+                                    class="text-slate-400 hover:text-rose-400 text-xs p-1 ml-1 transition"
+                                    title="Sign Out">
+                                <i class="fa-solid fa-right-from-bracket"></i>
+                            </button>
+                        </div>
+                    </template>
+
+                    <template x-if="!user || user.isAnonymous">
+                        <button @click="googleSignIn()" 
+                                class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg active:scale-95">
+                            <i class="fa-brands fa-google text-amber-300"></i>
+                            <span>Sign in with Google</span>
+                        </button>
+                    </template>
+
+                    <!-- Student / Teacher Mode Toggle -->
+                    <button @click="isTeacherMode = !isTeacherMode" 
+                            :class="isTeacherMode ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-300' : 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'"
+                            class="border px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 active:scale-95">
+                        <i :class="isTeacherMode ? 'fa-solid fa-user-gear' : 'fa-solid fa-eye'"></i>
+                        <span x-text="isTeacherMode ? 'Edit Mode' : 'Student Mode'"></span>
                     </button>
 
-                    <!-- Avatar Display -->
-                    <div class="relative inline-block mb-3">
-                        <div class="w-24 h-24 rounded-full mx-auto flex items-center justify-center text-4xl shadow-xl ring-4 ring-indigo-500/30 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-                            <template x-if="profile.avatarType === 'emoji'">
-                                <span x-text="profile.avatarVal"></span>
-                            </template>
-                            <template x-if="profile.avatarType === 'image'">
-                                <img :src="profile.avatarVal" @error="$el.src='https://placehold.co/100x100/6366f1/ffffff?text=Teacher'" class="w-full h-full object-cover" alt="Teacher Photo">
-                            </template>
-                        </div>
-                        <span class="absolute bottom-1 right-1 bg-emerald-500 text-white p-1 rounded-full text-xs ring-2 ring-slate-900" title="Class Online">
-                            <i class="fa-solid fa-check text-[10px]"></i>
-                        </span>
-                    </div>
+                    <!-- Share / QR Button -->
+                    <button @click="showQrModal = true" 
+                            class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
+                            title="Show Shareable QR Code & Link">
+                        <i class="fa-solid fa-qrcode text-indigo-400"></i>
+                    </button>
+                </div>
+            </div>
 
-                    <!-- Name & Subject -->
-                    <h2 class="text-2xl font-bold font-playful tracking-tight" x-text="profile.name"></h2>
-                    <p class="text-xs font-semibold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest mt-0.5" x-text="profile.gradeSubject"></p>
-                    
-                    <!-- Bio Quote -->
-                    <div class="mt-3 max-w-sm mx-auto">
-                        <p class="text-xs leading-relaxed opacity-80 bg-black/5 dark:bg-white/5 p-3 rounded-2xl border border-black/5 dark:border-white/5" x-text="profile.bio"></p>
+            <div x-show="isTeacherMode" x-transition class="bg-slate-900/90 border-t border-slate-800/80 px-4 py-2 text-xs">
+                <div class="max-w-4xl mx-auto flex items-center justify-between overflow-x-auto gap-3">
+                    <span class="text-slate-400 text-xs font-medium shrink-0 flex items-center gap-1.5">
+                        <i class="fa-solid fa-palette text-amber-400"></i> Bio Theme:
+                    </span>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button @click="setTheme('modern')" 
+                                :class="theme === 'modern' ? 'ring-2 ring-indigo-400 font-bold text-white bg-indigo-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
+                                class="px-2.5 py-1 rounded-md text-xs transition">✨ Modern Dark</button>
+                        <button @click="setTheme('classroom')" 
+                                :class="theme === 'classroom' ? 'ring-2 ring-emerald-400 font-bold text-white bg-emerald-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
+                                class="px-2.5 py-1 rounded-md text-xs transition">🏫 Classroom Light</button>
+                        <button @click="setTheme('pastel')" 
+                                :class="theme === 'pastel' ? 'ring-2 ring-pink-400 font-bold text-white bg-pink-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
+                                class="px-2.5 py-1 rounded-md text-xs transition">🌸 Soft Pastel</button>
+                        <button @click="setTheme('notebook')" 
+                                :class="theme === 'notebook' ? 'ring-2 ring-amber-400 font-bold text-white bg-amber-900/40' : 'text-slate-300 bg-slate-800 hover:bg-slate-700'"
+                                class="px-2.5 py-1 rounded-md text-xs transition">📝 Paper Notebook</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="mt-4 sm:mt-6 px-2 sm:px-4 flex-1">
+            <div class="mobile-frame-container rounded-3xl overflow-hidden transition-all duration-300 min-h-[780px] flex flex-col border border-slate-800"
+                 :class="getThemeContainerClass()">
+                
+                <!-- Simulated Mobile Device Header Bar -->
+                <div class="py-2.5 px-6 flex items-center justify-between text-xs opacity-60 border-b border-black/5 dark:border-white/5 select-none">
+                    <span class="font-semibold text-[10px] tracking-widest uppercase flex items-center gap-1">
+                        <i class="fa-solid fa-apple-whole text-indigo-400"></i> Classroom Bio Hub
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-wifi text-[10px]"></i>
+                        <i class="fa-solid fa-battery-full text-[10px]"></i>
                     </div>
                 </div>
 
-                <!-- TOP SPACE TO ADD A NEW LINK (Visible in Teacher Mode) -->
-                <div x-show="isTeacherMode" 
-                     x-transition 
-                     class="mb-6 p-4 rounded-2xl bg-indigo-950/40 dark:bg-slate-800/90 border-2 border-indigo-500/30 shadow-lg">
+                <div class="p-4 sm:p-6 flex-1 flex flex-col">
                     
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                            <i class="fa-solid fa-circle-plus text-indigo-400 text-sm"></i> Add Classroom Resource Link
-                        </h3>
-                        <span class="text-[10px] text-indigo-300/70 font-mono italic">Appends to bottom</span>
+                    <div class="text-center relative mb-6">
+                        <button x-show="isTeacherMode" 
+                                @click="showProfileModal = true"
+                                class="absolute top-0 right-0 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 dark:text-indigo-400 p-2 rounded-full transition text-xs"
+                                title="Edit Teacher Profile">
+                            <i class="fa-solid fa-user-pen"></i>
+                        </button>
+
+                        <!-- Avatar Display -->
+                        <div class="relative inline-block mb-3">
+                            <div class="w-24 h-24 rounded-full mx-auto flex items-center justify-center text-4xl shadow-xl ring-4 ring-indigo-500/30 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+                                <template x-if="profile.avatarType === 'emoji'">
+                                    <span x-text="profile.avatarVal"></span>
+                                </template>
+                                <template x-if="profile.avatarType === 'image'">
+                                    <img :src="profile.avatarVal" @error="$el.src='https://placehold.co/100x100/6366f1/ffffff?text=Teacher'" class="w-full h-full object-cover" alt="Teacher Photo">
+                                </template>
+                            </div>
+                            <span class="absolute bottom-1 right-1 bg-emerald-500 text-white p-1 rounded-full text-xs ring-2 ring-slate-900" title="Classroom Sync Active">
+                                <i class="fa-solid fa-check text-[10px]"></i>
+                            </span>
+                        </div>
+
+                        <!-- Name & Grade/Subject -->
+                        <h2 class="text-2xl font-bold font-playful tracking-tight" x-text="profile.name"></h2>
+                        <p class="text-xs font-semibold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest mt-0.5" x-text="profile.gradeSubject"></p>
+                        
+                        <!-- Bio Note -->
+                        <div class="mt-3 max-w-sm mx-auto">
+                            <p class="text-xs leading-relaxed opacity-80 bg-black/5 dark:bg-white/5 p-3 rounded-2xl border border-black/5 dark:border-white/5" x-text="profile.bio"></p>
+                        </div>
                     </div>
 
-                    <form @submit.prevent="addNewLink()" class="space-y-3.5">
+                    <div x-show="isTeacherMode" 
+                         x-transition 
+                         class="mb-6 p-4 rounded-2xl bg-indigo-950/40 dark:bg-slate-800/90 border-2 border-indigo-500/30 shadow-lg">
                         
-                        <!-- Title Input -->
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Resource Title *</label>
-                            <input type="text" 
-                                   x-model="newLink.title" 
-                                   placeholder="e.g., Weekly Homework Portal" 
-                                   required 
-                                   class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-circle-plus text-indigo-400 text-sm"></i> Add New Resource Link
+                            </h3>
+                            <span class="text-[10px] text-indigo-300/80 font-mono italic">Appends at bottom ↓</span>
                         </div>
 
-                        <!-- URL Input -->
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Web URL * (Opens in new tab)</label>
-                            <input type="url" 
-                                   x-model="newLink.url" 
-                                   placeholder="https://classroom.google.com/..." 
-                                   required 
-                                   class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <form @submit.prevent="addNewLink()" class="space-y-3.5">
+                            
+                            <!-- Resource Title Input -->
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1">Resource Title *</label>
+                                <input type="text" 
+                                       x-model="newLink.title" 
+                                       placeholder="e.g., Chapter 4 Quizlet & Lab Portal" 
+                                       required 
+                                       class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <!-- URL Input -->
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1">Web Link URL * (Opens in new tab)</label>
+                                <input type="url" 
+                                       x-model="newLink.url" 
+                                       placeholder="https://classroom.google.com/..." 
+                                       required 
+                                       class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <!-- Category Selection -->
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1">Category</label>
+                                <select x-model="newLink.category" 
+                                        class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <template x-for="cat in categories" :key="cat.name">
+                                        <option :value="cat.name" x-text="cat.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <label class="block text-[11px] font-semibold text-slate-300">Link Accent Color *</label>
+                                    <span class="text-[10px] font-mono text-slate-400" x-text="newLink.color"></span>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-700/80">
+                                    <!-- Educational Color Palette Swatches -->
+                                    <template x-for="c in colorPalette" :key="c.hex">
+                                        <button type="button" 
+                                                @click="newLink.color = c.hex"
+                                                :style="{ backgroundColor: c.hex }"
+                                                :title="c.name"
+                                                class="w-7 h-7 rounded-full transition-transform transform hover:scale-110 flex items-center justify-center border border-white/20 shadow-sm"
+                                                :class="newLink.color.toLowerCase() === c.hex.toLowerCase() ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-85 hover:opacity-100'">
+                                            <i x-show="newLink.color.toLowerCase() === c.hex.toLowerCase()" class="fa-solid fa-check text-white text-[10px] drop-shadow"></i>
+                                        </button>
+                                    </template>
+
+                                    <!-- Custom HTML Color Picker -->
+                                    <div class="relative flex items-center ml-auto">
+                                        <label class="text-[10px] text-slate-400 mr-1.5 font-medium">Custom:</label>
+                                        <input type="color" 
+                                               x-model="newLink.color" 
+                                               class="w-7 h-7 rounded-full cursor-pointer bg-transparent border-0 p-0 overflow-hidden" 
+                                               title="Pick custom color">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Add Button -->
+                            <button type="submit" 
+                                    class="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all duration-150 flex items-center justify-center gap-2 active:scale-98">
+                                <i class="fa-solid fa-arrow-down text-xs"></i> Add Link to Bottom of List
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                            <button @click="activeCategory = 'All'" 
+                                    :class="activeCategory === 'All' ? 'bg-indigo-600 text-white font-bold' : 'bg-black/10 dark:bg-white/10 opacity-70 hover:opacity-100'"
+                                    class="px-3 py-1 rounded-full text-xs whitespace-nowrap transition">
+                                All Links
+                            </button>
+                            <template x-for="cat in categories" :key="cat.name">
+                                <button @click="activeCategory = cat.name" 
+                                        :class="activeCategory === cat.name ? 'bg-indigo-600 text-white font-bold' : 'bg-black/10 dark:bg-white/10 opacity-70 hover:opacity-100'"
+                                        class="px-3 py-1 rounded-full text-xs whitespace-nowrap transition">
+                                    <span x-text="cat.name"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3 flex-1">
+                        
+                        <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider opacity-60 mb-1 px-1">
+                            <span>Resource Collection</span>
+                            <span x-text="filteredLinks.length + ' Item(s)'"></span>
                         </div>
 
-                        <!-- Category Selection -->
+                        <!-- Empty State -->
+                        <template x-if="filteredLinks.length === 0">
+                            <div class="text-center py-10 px-4 rounded-2xl border-2 border-dashed border-slate-700/50 opacity-60">
+                                <i class="fa-solid fa-folder-open text-3xl mb-2 text-indigo-400"></i>
+                                <p class="text-xs font-semibold">No links found in this category.</p>
+                                <p class="text-[11px] opacity-70 mt-1" x-show="isTeacherMode">Add a link using the top form above!</p>
+                            </div>
+                        </template>
+
+                        <!-- Dynamic Link Cards (Each new link renders at the BOTTOM) -->
+                        <template x-for="(link, index) in filteredLinks" :key="link.id">
+                            <div class="group relative rounded-2xl transition-all duration-200 border transform active:scale-98 animate-pop-in shadow-md overflow-hidden"
+                                 :style="{ borderColor: link.color + '60', backgroundColor: link.color + '12' }">
+                                
+                                <!-- Color Accent Side Indicator Bar -->
+                                <div class="absolute left-0 top-0 bottom-0 w-1.5" :style="{ backgroundColor: link.color }"></div>
+
+                                <!-- Main Link Content Row -->
+                                <div class="p-3.5 pl-4 flex items-center justify-between gap-3">
+                                    
+                                    <!-- Link Click Area (Always opens in new tab) -->
+                                    <a :href="link.url" 
+                                       target="_blank" 
+                                       rel="noopener noreferrer" 
+                                       @click="registerClick(link.id)"
+                                       class="flex items-center gap-3 flex-1 min-w-0 group-hover:opacity-95">
+                                        
+                                        <!-- Color Swatch Circle -->
+                                        <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-inner text-white text-xs font-bold"
+                                             :style="{ backgroundColor: link.color }">
+                                            <i class="fa-solid fa-arrow-up-right-from-square text-[11px]"></i>
+                                        </div>
+
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="font-bold text-sm leading-snug truncate" x-text="link.title"></span>
+                                            </div>
+
+                                            <div class="flex items-center gap-2 text-[11px] opacity-70 mt-0.5">
+                                                <span x-text="link.category" class="font-medium"></span>
+                                                <span class="text-[9px]">•</span>
+                                                <span x-text="formatDomain(link.url)" class="truncate max-w-[120px] font-mono"></span>
+                                            </div>
+                                        </div>
+                                    </a>
+
+                                    <div x-show="isTeacherMode" class="flex items-center gap-1 bg-black/20 dark:bg-slate-900/60 p-1 rounded-xl shrink-0 backdrop-blur-xs">
+                                        
+                                        <!-- Quick Edit Link Title & Color -->
+                                        <button @click.stop="openEditModal(link)" 
+                                                class="p-1.5 hover:bg-white/20 rounded-lg text-xs opacity-80 hover:opacity-100 transition" 
+                                                title="Edit Title & Color">
+                                            <i class="fa-solid fa-pen text-indigo-400"></i>
+                                        </button>
+
+                                        <!-- Move Up -->
+                                        <button @click.stop="moveLink(link.id, 'up')" 
+                                                :disabled="index === 0"
+                                                :class="index === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-white/20 opacity-80 hover:opacity-100'"
+                                                class="p-1.5 rounded-lg text-xs transition" 
+                                                title="Move Up">
+                                            <i class="fa-solid fa-arrow-up"></i>
+                                        </button>
+
+                                        <!-- Move Down -->
+                                        <button @click.stop="moveLink(link.id, 'down')" 
+                                                :disabled="index === filteredLinks.length - 1"
+                                                :class="index === filteredLinks.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-white/20 opacity-80 hover:opacity-100'"
+                                                class="p-1.5 rounded-lg text-xs transition" 
+                                                title="Move Down">
+                                            <i class="fa-solid fa-arrow-down"></i>
+                                        </button>
+
+                                        <!-- Delete Link -->
+                                        <button @click.stop="deleteLink(link.id)" 
+                                                class="p-1.5 hover:bg-rose-500/30 text-rose-400 rounded-lg text-xs transition" 
+                                                title="Delete Link">
+                                            <i class="fa-solid fa-trash-can"></i>
+                                        </button>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </template>
+
+                    </div>
+
+                    <!-- Footer Sign-off -->
+                    <div class="mt-8 pt-4 border-t border-black/10 dark:border-white/10 text-center text-[11px] opacity-60">
+                        <p x-text="profile.name + ' • Classroom Resource Bio'"></p>
+                        <p class="text-[9px] mt-0.5 opacity-80">All resources open in a new tab • Synced with Cloud</p>
+                    </div>
+
+                </div>
+            </div>
+        </main>
+
+        <!-- EDIT LINK MODAL -->
+        <div x-show="showEditModal" 
+             x-transition.opacity 
+             class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            
+            <div @click.away="showEditModal = false" class="bg-slate-900 text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-800">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-sm flex items-center gap-2 text-indigo-400">
+                        <i class="fa-solid fa-pen-to-square"></i> Edit Resource Link
+                    </h3>
+                    <button @click="showEditModal = false" class="text-slate-400 hover:text-white text-xs">
+                        <i class="fa-solid fa-xmark text-base"></i>
+                    </button>
+                </div>
+
+                <template x-if="editingLink">
+                    <form @submit.prevent="saveEditedLink()" class="space-y-3.5">
                         <div>
-                            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Category</label>
-                            <select x-model="newLink.category" 
-                                    class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <label class="block text-xs font-semibold mb-1 text-slate-300">Resource Title</label>
+                            <input type="text" x-model="editingLink.title" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold mb-1 text-slate-300">URL (Opens in new tab)</label>
+                            <input type="url" x-model="editingLink.url" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold mb-1 text-slate-300">Category</label>
+                            <select x-model="editingLink.category" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
                                 <template x-for="cat in categories" :key="cat.name">
                                     <option :value="cat.name" x-text="cat.name"></option>
                                 </template>
                             </select>
                         </div>
 
-                        <!-- COLOR SELECTOR INSTEAD OF ICON PICKER -->
+                        <!-- Color Selector in Edit Modal -->
                         <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="block text-[11px] font-semibold text-slate-300">Link Theme Color *</label>
-                                <span class="text-[10px] font-mono text-slate-400" x-text="newLink.color"></span>
-                            </div>
-
-                            <div class="flex flex-wrap items-center gap-2 bg-slate-900/80 p-2.5 rounded-xl border border-slate-700/80">
-                                <!-- Preset Teacher Color Palette Swatches -->
+                            <label class="block text-xs font-semibold mb-1 text-slate-300">Accent Color</label>
+                            <div class="flex flex-wrap items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
                                 <template x-for="c in colorPalette" :key="c.hex">
                                     <button type="button" 
-                                            @click="newLink.color = c.hex"
+                                            @click="editingLink.color = c.hex"
                                             :style="{ backgroundColor: c.hex }"
                                             :title="c.name"
-                                            class="w-7 h-7 rounded-full transition-transform transform hover:scale-110 flex items-center justify-center border border-white/20 shadow-sm"
-                                            :class="newLink.color.toLowerCase() === c.hex.toLowerCase() ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-85 hover:opacity-100'">
-                                        <i x-show="newLink.color.toLowerCase() === c.hex.toLowerCase()" class="fa-solid fa-check text-white text-[10px] drop-shadow"></i>
+                                            class="w-7 h-7 rounded-full border border-white/20 flex items-center justify-center"
+                                            :class="editingLink.color.toLowerCase() === c.hex.toLowerCase() ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-80'">
+                                        <i x-show="editingLink.color.toLowerCase() === c.hex.toLowerCase()" class="fa-solid fa-check text-white text-[10px]"></i>
                                     </button>
                                 </template>
 
-                                <!-- Custom Hex Color Input Picker -->
                                 <div class="relative flex items-center ml-auto">
-                                    <label class="text-[10px] text-slate-400 mr-1.5 font-medium">Custom:</label>
-                                    <input type="color" 
-                                           x-model="newLink.color" 
-                                           class="w-7 h-7 rounded-full cursor-pointer bg-transparent border-0 p-0 overflow-hidden" 
-                                           title="Pick custom color">
+                                    <span class="text-[10px] text-slate-400 mr-1.5">Custom:</span>
+                                    <input type="color" x-model="editingLink.color" class="w-7 h-7 rounded-full cursor-pointer bg-transparent border-0 p-0">
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Add Button -->
-                        <button type="submit" 
-                                class="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all duration-150 flex items-center justify-center gap-2 active:scale-98">
-                            <i class="fa-solid fa-arrow-down text-xs"></i> Add Link to Bottom of List
-                        </button>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" @click="showEditModal = false" class="px-3.5 py-2 rounded-xl text-xs bg-slate-800 text-slate-300 hover:bg-slate-700">Cancel</button>
+                            <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-indigo-600 text-white font-bold hover:bg-indigo-500">Save Changes</button>
+                        </div>
                     </form>
-                </div>
-
-                <!-- Category Filter Pills -->
-                <div class="mb-4">
-                    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
-                        <button @click="activeCategory = 'All'" 
-                                :class="activeCategory === 'All' ? 'bg-indigo-600 text-white font-bold' : 'bg-black/10 dark:bg-white/10 opacity-70 hover:opacity-100'"
-                                class="px-3 py-1 rounded-full text-xs whitespace-nowrap transition">
-                            All Links
-                        </button>
-                        <template x-for="cat in categories" :key="cat.name">
-                            <button @click="activeCategory = cat.name" 
-                                    :class="activeCategory === cat.name ? 'bg-indigo-600 text-white font-bold' : 'bg-black/10 dark:bg-white/10 opacity-70 hover:opacity-100'"
-                                    class="px-3 py-1 rounded-full text-xs whitespace-nowrap transition flex items-center gap-1">
-                                <span x-text="cat.name"></span>
-                            </button>
-                        </template>
-                    </div>
-                </div>
-
-                <!-- LINKS LIST CONTAINER (Appended links render at bottom) -->
-                <div class="space-y-3 flex-1">
-                    
-                    <div class="flex items-center justify-between text-xs font-bold uppercase tracking-wider opacity-60 mb-1 px-1">
-                        <span>Classroom Resources</span>
-                        <span x-text="filteredLinks.length + ' Item(s)'"></span>
-                    </div>
-
-                    <!-- Empty State -->
-                    <template x-if="filteredLinks.length === 0">
-                        <div class="text-center py-10 px-4 rounded-2xl border-2 border-dashed border-slate-700/50 opacity-60">
-                            <i class="fa-solid fa-folder-open text-3xl mb-2 text-indigo-400"></i>
-                            <p class="text-xs font-semibold">No links found in this category.</p>
-                            <p class="text-[11px] opacity-70 mt-1" x-show="isTeacherMode">Add a link using the top form!</p>
-                        </div>
-                    </template>
-
-                    <!-- Dynamically Stacked Cards (Each newly added link renders at the VERY BOTTOM) -->
-                    <template x-for="(link, index) in filteredLinks" :key="link.id">
-                        <div class="group relative rounded-2xl transition-all duration-200 border transform active:scale-98 animate-pop-in shadow-md overflow-hidden"
-                             :style="{ borderColor: link.color + '60', backgroundColor: link.color + '10' }">
-                            
-                            <!-- Color Accent Side Indicator Bar -->
-                            <div class="absolute left-0 top-0 bottom-0 w-1.5" :style="{ backgroundColor: link.color }"></div>
-
-                            <!-- Main Link Content Bar -->
-                            <div class="p-3.5 pl-4 flex items-center justify-between gap-3">
-                                
-                                <!-- Link Title & Domain Click Area -->
-                                <a :href="link.url" 
-                                   target="_blank" 
-                                   rel="noopener noreferrer" 
-                                   @click="registerClick(link.id)"
-                                   class="flex items-center gap-3 flex-1 min-w-0 group-hover:opacity-95">
-                                    
-                                    <!-- Dynamic Color Swatch Tag Circle -->
-                                    <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-inner text-white text-xs font-bold"
-                                         :style="{ backgroundColor: link.color }">
-                                        <i class="fa-solid fa-arrow-up-right-from-square text-[11px]"></i>
-                                    </div>
-
-                                    <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-1.5">
-                                            <!-- Resource Title -->
-                                            <span class="font-bold text-sm leading-snug truncate" x-text="link.title"></span>
-                                        </div>
-
-                                        <div class="flex items-center gap-2 text-[11px] opacity-70 mt-0.5">
-                                            <span x-text="link.category" class="font-medium"></span>
-                                            <span class="text-[9px]">•</span>
-                                            <span x-text="formatDomain(link.url)" class="truncate max-w-[120px] font-mono"></span>
-                                        </div>
-                                    </div>
-                                </a>
-
-                                <!-- Teacher Controls (Shown only in Teacher Edit Mode) -->
-                                <div x-show="isTeacherMode" class="flex items-center gap-1 bg-black/20 dark:bg-slate-900/60 p-1 rounded-xl shrink-0 backdrop-blur-xs">
-                                    
-                                    <!-- Edit Title, URL, and Color Button -->
-                                    <button @click.stop="openEditModal(link)" 
-                                            class="p-1.5 hover:bg-white/20 rounded-lg text-xs opacity-80 hover:opacity-100 transition" 
-                                            title="Edit Title & Color">
-                                        <i class="fa-solid fa-pen text-indigo-400"></i>
-                                    </button>
-
-                                    <!-- Move Up in Order -->
-                                    <button @click.stop="moveLink(link.id, 'up')" 
-                                            :disabled="index === 0"
-                                            :class="index === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-white/20 opacity-80 hover:opacity-100'"
-                                            class="p-1.5 rounded-lg text-xs transition" 
-                                            title="Move Up">
-                                        <i class="fa-solid fa-arrow-up"></i>
-                                    </button>
-
-                                    <!-- Move Down in Order -->
-                                    <button @click.stop="moveLink(link.id, 'down')" 
-                                            :disabled="index === filteredLinks.length - 1"
-                                            :class="index === filteredLinks.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-white/20 opacity-80 hover:opacity-100'"
-                                            class="p-1.5 rounded-lg text-xs transition" 
-                                            title="Move Down">
-                                        <i class="fa-solid fa-arrow-down"></i>
-                                    </button>
-
-                                    <!-- Delete Link -->
-                                    <button @click.stop="deleteLink(link.id)" 
-                                            class="p-1.5 hover:bg-rose-500/30 text-rose-400 rounded-lg text-xs transition" 
-                                            title="Delete Link">
-                                        <i class="fa-solid fa-trash-can"></i>
-                                    </button>
-                                </div>
-
-                                <!-- Student View Click Counter in Teacher Mode -->
-                                <div x-show="isTeacherMode" class="text-[10px] font-mono opacity-60 px-1.5 py-0.5 rounded bg-black/20" title="Total Clicks">
-                                    <i class="fa-solid fa-chart-line text-[9px] mr-0.5 text-indigo-300"></i>
-                                    <span x-text="link.clicks || 0"></span>
-                                </div>
-
-                            </div>
-                        </div>
-                    </template>
-
-                </div>
-
-                <!-- Footer Sign-off -->
-                <div class="mt-8 pt-4 border-t border-black/10 dark:border-white/10 text-center text-[11px] opacity-60">
-                    <p x-text="profile.name + ' • Classroom Links'"></p>
-                    <p class="text-[9px] mt-0.5 opacity-80">All resources open in a new browser window</p>
-                </div>
-
+                </template>
             </div>
         </div>
-    </main>
 
-    <!-- EDIT LINK MODAL -->
-    <div x-show="showEditModal" 
-         x-transition.opacity 
-         class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-        
-        <div @click.away="showEditModal = false" class="bg-slate-900 text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-800">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="font-bold text-sm flex items-center gap-2 text-indigo-400">
-                    <i class="fa-solid fa-pen-to-square"></i> Edit Resource Link
-                </h3>
-                <button @click="showEditModal = false" class="text-slate-400 hover:text-white text-xs">
-                    <i class="fa-solid fa-xmark text-base"></i>
-                </button>
-            </div>
+        <!-- EDIT PROFILE MODAL -->
+        <div x-show="showProfileModal" 
+             x-transition.opacity 
+             class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            
+            <div @click.away="showProfileModal = false" class="bg-slate-900 text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-800">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-sm flex items-center gap-2 text-indigo-400">
+                        <i class="fa-solid fa-user-pen"></i> Edit Profile Information
+                    </h3>
+                    <button @click="showProfileModal = false" class="text-slate-400 hover:text-white text-xs">
+                        <i class="fa-solid fa-xmark text-base"></i>
+                    </button>
+                </div>
 
-            <template x-if="editingLink">
-                <form @submit.prevent="saveEditedLink()" class="space-y-3.5">
+                <form @submit.prevent="saveProfile()" class="space-y-3">
                     <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-300">Resource Title</label>
-                        <input type="text" x-model="editingLink.title" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white focus:ring-2 focus:ring-indigo-500">
+                        <label class="block text-xs font-semibold mb-1 text-slate-300">Teacher Name</label>
+                        <input type="text" x-model="profileForm.name" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-300">URL (Opens in new tab)</label>
-                        <input type="url" x-model="editingLink.url" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white focus:ring-2 focus:ring-indigo-500">
+                        <label class="block text-xs font-semibold mb-1 text-slate-300">Grade & Subject</label>
+                        <input type="text" x-model="profileForm.gradeSubject" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-300">Category</label>
-                        <select x-model="editingLink.category" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
-                            <template x-for="cat in categories" :key="cat.name">
-                                <option :value="cat.name" x-text="cat.name"></option>
-                            </template>
-                        </select>
+                        <label class="block text-xs font-semibold mb-1 text-slate-300">Welcome Bio Note</label>
+                        <textarea x-model="profileForm.bio" rows="3" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white"></textarea>
                     </div>
 
-                    <!-- COLOR SELECTOR IN EDIT MODAL -->
-                    <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-300">Link Theme Color</label>
-                        <div class="flex flex-wrap items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                            <template x-for="c in colorPalette" :key="c.hex">
-                                <button type="button" 
-                                        @click="editingLink.color = c.hex"
-                                        :style="{ backgroundColor: c.hex }"
-                                        :title="c.name"
-                                        class="w-7 h-7 rounded-full border border-white/20 flex items-center justify-center"
-                                        :class="editingLink.color.toLowerCase() === c.hex.toLowerCase() ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-80'">
-                                    <i x-show="editingLink.color.toLowerCase() === c.hex.toLowerCase()" class="fa-solid fa-check text-white text-[10px]"></i>
-                                </button>
-                            </template>
-
-                            <div class="relative flex items-center ml-auto">
-                                <span class="text-[10px] text-slate-400 mr-1.5">Custom:</span>
-                                <input type="color" x-model="editingLink.color" class="w-7 h-7 rounded-full cursor-pointer bg-transparent border-0 p-0">
-                            </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold mb-1 text-slate-300">Avatar Type</label>
+                            <select x-model="profileForm.avatarType" class="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
+                                <option value="emoji">Emoji Icon</option>
+                                <option value="image">Image URL</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold mb-1 text-slate-300" x-text="profileForm.avatarType === 'emoji' ? 'Select Emoji' : 'Image URL'"></label>
+                            <input type="text" x-model="profileForm.avatarVal" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
                         </div>
                     </div>
 
                     <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" @click="showEditModal = false" class="px-3.5 py-2 rounded-xl text-xs bg-slate-800 text-slate-300 hover:bg-slate-700">Cancel</button>
-                        <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-indigo-600 text-white font-bold hover:bg-indigo-500">Save Changes</button>
+                        <button type="button" @click="showProfileModal = false" class="px-3.5 py-2 rounded-xl text-xs bg-slate-800 text-slate-300">Cancel</button>
+                        <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-indigo-600 text-white font-bold">Save Profile</button>
                     </div>
                 </form>
-            </template>
-        </div>
-    </div>
-
-    <!-- EDIT PROFILE MODAL -->
-    <div x-show="showProfileModal" 
-         x-transition.opacity 
-         class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-        
-        <div @click.away="showProfileModal = false" class="bg-slate-900 text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-800">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="font-bold text-sm flex items-center gap-2 text-indigo-400">
-                    <i class="fa-solid fa-user-pen"></i> Edit Teacher Profile
-                </h3>
-                <button @click="showProfileModal = false" class="text-slate-400 hover:text-white text-xs">
-                    <i class="fa-solid fa-xmark text-base"></i>
-                </button>
             </div>
+        </div>
 
-            <form @submit.prevent="saveProfile()" class="space-y-3">
-                <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-300">Teacher Name</label>
-                    <input type="text" x-model="profileForm.name" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
+        <!-- SHARE QR CODE MODAL -->
+        <div x-show="showQrModal" 
+             x-transition.opacity 
+             class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            
+            <div @click.away="showQrModal = false" class="bg-slate-900 text-white rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl border border-slate-800">
+                <div class="flex justify-end">
+                    <button @click="showQrModal = false" class="text-slate-400 hover:text-white text-xs">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-300">Grade & Subject</label>
-                    <input type="text" x-model="profileForm.gradeSubject" required class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-semibold mb-1 text-slate-300">Classroom Welcome Note</label>
-                    <textarea x-model="profileForm.bio" rows="3" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white"></textarea>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-300">Avatar Style</label>
-                        <select x-model="profileForm.avatarType" class="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
-                            <option value="emoji">Emoji Icon</option>
-                            <option value="image">Image URL</option>
-                        </select>
+                <div class="mb-4">
+                    <div class="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto text-xl mb-2">
+                        <i class="fa-solid fa-qrcode"></i>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold mb-1 text-slate-300" x-text="profileForm.avatarType === 'emoji' ? 'Select Emoji' : 'Image URL'"></label>
-                        <input type="text" x-model="profileForm.avatarVal" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-700 bg-slate-950 text-white">
-                    </div>
+                    <h3 class="font-bold text-base">Share Bio Hub</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Students scan to open link tree on mobile</p>
                 </div>
 
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" @click="showProfileModal = false" class="px-3.5 py-2 rounded-xl text-xs bg-slate-800 text-slate-300">Cancel</button>
-                    <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-indigo-600 text-white font-bold">Update Profile</button>
+                <div class="bg-white p-4 rounded-2xl inline-block mx-auto mb-4 shadow-lg">
+                    <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(window.location.href)" 
+                         alt="Classroom QR Code" 
+                         class="w-44 h-44">
                 </div>
-            </form>
-        </div>
-    </div>
 
-    <!-- SHARE & QR CODE MODAL -->
-    <div x-show="showQrModal" 
-         x-transition.opacity 
-         class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-        
-        <div @click.away="showQrModal = false" class="bg-slate-900 text-white rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl border border-slate-800">
-            <div class="flex justify-end">
-                <button @click="showQrModal = false" class="text-slate-400 hover:text-white text-xs">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
-
-            <div class="mb-4">
-                <div class="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto text-xl mb-2">
-                    <i class="fa-solid fa-qrcode"></i>
+                <div class="space-y-2">
+                    <button @click="copyBioLink()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-copy"></i> Copy Direct Share Link
+                    </button>
                 </div>
-                <h3 class="font-bold text-base">Classroom Bio Link</h3>
-                <p class="text-xs text-slate-400 mt-0.5">Students & parents can scan to open link hub</p>
-            </div>
-
-            <!-- Dynamic QR Code Display -->
-            <div class="bg-white p-4 rounded-2xl inline-block mx-auto mb-4 shadow-lg">
-                <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(window.location.href)" 
-                     alt="Classroom QR Code" 
-                     class="w-44 h-44">
-            </div>
-
-            <div class="space-y-2">
-                <button @click="copyBioLink()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-copy"></i> Copy Direct Bio Link
-                </button>
             </div>
         </div>
-    </div>
 
-    <!-- TOAST NOTIFICATION -->
-    <div x-show="toast.show" 
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0 transform translate-y-4"
-         x-transition:enter-end="opacity-100 transform translate-y-0"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100 transform translate-y-0"
-         x-transition:leave-end="opacity-0 transform translate-y-4"
-         class="fixed bottom-4 right-4 z-50 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-2 text-xs font-medium">
-        <i class="fa-solid fa-circle-check text-emerald-400"></i>
-        <span x-text="toast.message"></span>
+        <!-- TOAST NOTIFICATION -->
+        <div x-show="toast.show" 
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 transform translate-y-4"
+             x-transition:enter-end="opacity-100 transform translate-y-0"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 transform translate-y-0"
+             x-transition:leave-end="opacity-0 transform translate-y-4"
+             class="fixed bottom-4 right-4 z-50 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-2 text-xs font-medium">
+            <i class="fa-solid fa-circle-check text-emerald-400"></i>
+            <span x-text="toast.message"></span>
+        </div>
+
     </div>
 
     <script>
@@ -592,6 +652,7 @@
                 isTeacherMode: true,
                 theme: 'modern',
                 activeCategory: 'All',
+                user: null,
                 
                 showEditModal: false,
                 showProfileModal: false,
@@ -603,28 +664,28 @@
                     message: ''
                 },
 
-                // Teacher Profile State
+                // Teacher Profile Data
                 profile: {
                     name: 'Ms. Sarah Johnson',
                     gradeSubject: '7th Grade Science • Room 204',
-                    bio: 'Welcome students & families! Find your weekly homework, lab guides, reading portals, and office hours links below.',
+                    bio: 'Welcome students & families! Access weekly homework, lab guides, reading portals, and office hours links below.',
                     avatarType: 'emoji',
                     avatarVal: '👩‍🏫'
                 },
 
                 profileForm: {},
 
-                // Preset Teacher Palette Options (Replaces icon selector)
+                // Preset Educational Color Palette Swatches
                 colorPalette: [
-                    { name: 'Classroom Blue', hex: '#3b82f6' },
-                    { name: 'Mint Green', hex: '#10b981' },
-                    { name: 'Sunset Coral', hex: '#f43f5e' },
-                    { name: 'Lavender Purple', hex: '#8b5cf6' },
-                    { name: 'Golden Yellow', hex: '#f59e0b' },
-                    { name: 'Slate Dark', hex: '#475569' }
+                    { name: 'Chalkboard Green', hex: '#10b981' },
+                    { name: 'Classroom Yellow', hex: '#f59e0b' },
+                    { name: 'Pencil Coral', hex: '#f43f5e' },
+                    { name: 'Sky Blue', hex: '#3b82f6' },
+                    { name: 'Pastel Purple', hex: '#8b5cf6' },
+                    { name: 'Charcoal Slate', hex: '#475569' }
                 ],
 
-                // New Link Form State (Located at TOP)
+                // New Link Form Model (Located at TOP)
                 newLink: {
                     title: '',
                     url: '',
@@ -632,7 +693,7 @@
                     color: '#3b82f6'
                 },
 
-                // Categories List
+                // Categories
                 categories: [
                     { name: '📚 Homework' },
                     { name: '🗓️ Schedule' },
@@ -642,7 +703,7 @@
                     { name: '🎨 Projects' }
                 ],
 
-                // Preset Default Links
+                // Initial Preset Links
                 links: [
                     {
                         id: 1,
@@ -654,7 +715,7 @@
                     },
                     {
                         id: 2,
-                        title: 'Weekly Reading Log & Lab Worksheet',
+                        title: 'Weekly Homework & Lab Worksheet',
                         url: 'https://docs.google.com',
                         category: '📚 Homework',
                         color: '#10b981',
@@ -670,7 +731,7 @@
                     },
                     {
                         id: 4,
-                        title: 'Schedule Parent & Student Office Hours',
+                        title: 'Parent & Student Office Hours Scheduler',
                         url: 'https://calendly.com',
                         category: '🗓️ Schedule',
                         color: '#f59e0b',
@@ -678,30 +739,104 @@
                     }
                 ],
 
-                init() {
-                    // Restore saved data from LocalStorage
-                    const savedProfile = localStorage.getItem('teachlinks_color_profile');
-                    if (savedProfile) {
-                        try { this.profile = JSON.parse(savedProfile); } catch(e){}
-                    }
-
-                    const savedLinks = localStorage.getItem('teachlinks_color_links');
-                    if (savedLinks) {
-                        try { this.links = JSON.parse(savedLinks); } catch(e){}
-                    }
-
-                    const savedTheme = localStorage.getItem('teachlinks_color_theme');
-                    if (savedTheme) {
-                        this.theme = savedTheme;
-                    }
+                async initApp() {
+                    // Check for Firebase Auth state changes
+                    const checkFB = setInterval(() => {
+                        if (window.FB && window.FB.auth) {
+                            clearInterval(checkFB);
+                            window.FB.auth.onAuthStateChanged(async (u) => {
+                                this.user = u;
+                                if (u) {
+                                    this.loadCloudBio(u.uid);
+                                }
+                            });
+                        }
+                    }, 100);
 
                     this.profileForm = { ...this.profile };
                 },
 
-                // Theme styling helper
+                // Google Sign In Handler
+                async googleSignIn() {
+                    if (!window.FB) return;
+                    const provider = new window.FB.GoogleAuthProvider();
+                    try {
+                        const res = await window.FB.signInWithPopup(window.FB.auth, provider);
+                        this.user = res.user;
+                        if (res.user && res.user.displayName) {
+                            this.profile.name = res.user.displayName;
+                            if (res.user.photoURL) {
+                                this.profile.avatarType = 'image';
+                                this.profile.avatarVal = res.user.photoURL;
+                            }
+                            this.saveToCloud();
+                        }
+                        this.showToast('Signed in with Google!');
+                    } catch (err) {
+                        console.error("Google sign in error:", err);
+                        this.showToast('Google Sign-In failed or was closed');
+                    }
+                },
+
+                // Sign Out Handler
+                async googleSignOut() {
+                    if (!window.FB) return;
+                    try {
+                        await window.FB.signOut(window.FB.auth);
+                        this.showToast('Signed out successfully');
+                    } catch(err) {
+                        console.error(err);
+                    }
+                },
+
+                // Firestore Document Listener (RULE 1 & RULE 3 strictly followed)
+                loadCloudBio(userId) {
+                    if (!window.FB || !userId) return;
+                    const userDocRef = window.FB.doc(window.FB.db, 'artifacts', window.FB.appId, 'users', userId, 'config', 'bioData');
+                    
+                    window.FB.onSnapshot(userDocRef, (snap) => {
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            if (data.profile) this.profile = data.profile;
+                            if (data.links) this.links = data.links;
+                            if (data.theme) this.theme = data.theme;
+                            this.profileForm = { ...this.profile };
+                        } else {
+                            // Initial Cloud Sync
+                            this.saveToCloud();
+                        }
+                    }, (err) => {
+                        console.error("Firestore snapshot error:", err);
+                    });
+                },
+
+                // Cloud Persistence Save
+                async saveToCloud() {
+                    if (!window.FB || !this.user) return;
+                    const userId = this.user.uid;
+                    const payload = {
+                        profile: this.profile,
+                        links: this.links,
+                        theme: this.theme,
+                        updatedAt: new Date().toISOString()
+                    };
+
+                    try {
+                        // User private storage path
+                        const userDocRef = window.FB.doc(window.FB.db, 'artifacts', window.FB.appId, 'users', userId, 'config', 'bioData');
+                        await window.FB.setDoc(userDocRef, payload, { merge: true });
+
+                        // Public share storage path
+                        const publicDocRef = window.FB.doc(window.FB.db, 'artifacts', window.FB.appId, 'public', 'data', 'teachers', userId);
+                        await window.FB.setDoc(publicDocRef, payload, { merge: true });
+                    } catch (err) {
+                        console.error("Save to Firestore failed:", err);
+                    }
+                },
+
                 setTheme(themeName) {
                     this.theme = themeName;
-                    localStorage.setItem('teachlinks_color_theme', themeName);
+                    this.saveToCloud();
                     this.showToast(`Theme changed to ${themeName}`);
                 },
 
@@ -719,19 +854,15 @@
                     }
                 },
 
-                // Filtered Links Computed Property
+                // Filtered Links Computed
                 get filteredLinks() {
-                    if (this.activeCategory === 'All') {
-                        return this.links;
-                    }
+                    if (this.activeCategory === 'All') return this.links;
                     return this.links.filter(l => l.category === this.activeCategory);
                 },
 
-                // ADD NEW LINK ACTION (Input is at top, appends at BOTTOM)
                 addNewLink() {
                     if (!this.newLink.title || !this.newLink.url) return;
 
-                    // Ensure valid URL scheme
                     let formattedUrl = this.newLink.url.trim();
                     if (!/^https?:\/\//i.test(formattedUrl) && !/^mailto:/i.test(formattedUrl)) {
                         formattedUrl = 'https://' + formattedUrl;
@@ -746,21 +877,19 @@
                         clicks: 0
                     };
 
-                    // Appends newly added link to the VERY BOTTOM of the list
+                    // Appends link to BOTTOM of list
                     this.links.push(item);
-                    this.saveLinks();
+                    this.saveToCloud();
 
-                    // Reset Top Form
+                    // Reset Form
                     this.newLink.title = '';
                     this.newLink.url = '';
-                    
-                    // Reset filter view so the new bottom item is visible
                     this.activeCategory = 'All';
 
-                    this.showToast('New link appended to bottom of list!');
+                    this.showToast('New link appended to bottom!');
                 },
 
-                // Reorder links in array
+                // Link Reordering Controls
                 moveLink(id, direction) {
                     const idx = this.links.findIndex(l => l.id === id);
                     if (idx === -1) return;
@@ -774,17 +903,17 @@
                         this.links[idx] = this.links[idx + 1];
                         this.links[idx + 1] = temp;
                     }
-                    this.saveLinks();
+                    this.saveToCloud();
                 },
 
                 // Delete Link
                 deleteLink(id) {
                     this.links = this.links.filter(l => l.id !== id);
-                    this.saveLinks();
-                    this.showToast('Resource link removed');
+                    this.saveToCloud();
+                    this.showToast('Resource link deleted');
                 },
 
-                // Edit Modal Logic
+                // Edit Link Modal
                 openEditModal(link) {
                     this.editingLink = JSON.parse(JSON.stringify(link));
                     this.showEditModal = true;
@@ -792,35 +921,30 @@
 
                 saveEditedLink() {
                     if (!this.editingLink) return;
-                    
                     const idx = this.links.findIndex(l => l.id === this.editingLink.id);
                     if (idx !== -1) {
                         this.links[idx] = { ...this.editingLink };
-                        this.saveLinks();
+                        this.saveToCloud();
                         this.showToast('Link details updated');
                     }
                     this.showEditModal = false;
                 },
 
-                // Profile Save Logic
+                // Edit Profile
                 saveProfile() {
                     this.profile = { ...this.profileForm };
-                    localStorage.setItem('teachlinks_color_profile', JSON.stringify(this.profile));
+                    this.saveToCloud();
                     this.showProfileModal = false;
-                    this.showToast('Teacher profile saved');
+                    this.showToast('Profile updated!');
                 },
 
-                // Track link clicks
+                // Register Link Click
                 registerClick(id) {
                     const idx = this.links.findIndex(l => l.id === id);
                     if (idx !== -1) {
                         this.links[idx].clicks = (this.links[idx].clicks || 0) + 1;
-                        this.saveLinks();
+                        this.saveToCloud();
                     }
-                },
-
-                saveLinks() {
-                    localStorage.setItem('teachlinks_color_links', JSON.stringify(this.links));
                 },
 
                 formatDomain(urlStr) {
@@ -834,8 +958,6 @@
 
                 copyBioLink() {
                     const textToCopy = window.location.href;
-                    
-                    // Fallback copy mechanism for iframe environments
                     const el = document.createElement('textarea');
                     el.value = textToCopy;
                     document.body.appendChild(el);
@@ -843,7 +965,7 @@
                     document.execCommand('copy');
                     document.body.removeChild(el);
 
-                    this.showToast('Bio Link copied to clipboard!');
+                    this.showToast('Share link copied to clipboard!');
                 },
 
                 showToast(msg) {
