@@ -86,7 +86,7 @@
             onSnapshot 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global Firebase state & configs
+        // Global Firebase state & fallback configuration
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'teacher-link-bio-app';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyDemoConfigOnlyForFallback",
@@ -98,17 +98,24 @@
         };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
+        let app, auth, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch(e) {
+            console.warn("Firebase initialization warning:", e);
+        }
 
-        // Expose Firebase tools to global scope for UI handlers
+        // Expose Firebase tools to global scope safely
         window.FB = {
             auth,
             db,
             appId,
             GoogleAuthProvider,
             signInWithPopup,
+            signInAnonymously,
+            signInWithCustomToken,
             signOut,
             doc,
             setDoc,
@@ -116,8 +123,9 @@
             currentUser: null
         };
 
-        // Initialize Authentication
+        // Initialize Anonymous Auth silently
         async function initAuth() {
+            if (!auth) return;
             try {
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
@@ -125,20 +133,19 @@
                     await signInAnonymously(auth);
                 }
             } catch (err) {
-                console.warn("Auth initialization fallback:", err);
-                if (!auth.currentUser) {
-                    try { await signInAnonymously(auth); } catch(e){}
-                }
+                console.warn("Auth initialization silent fallback:", err);
             }
         }
 
         initAuth();
     </script>
 
+    <!-- Alpine JS framework -->
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 
     <div x-data="teachBioApp()" x-init="initApp()" class="min-h-screen flex flex-col">
 
+        <!-- Application Navigation & Auth Bar -->
         <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-xl">
             <div class="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-white">
                 
@@ -149,15 +156,19 @@
                     </div>
                     <div>
                         <h1 class="font-bold text-sm tracking-wide flex items-center gap-1.5">
-                            TeachLinks <span class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded font-mono">Cloud Bio</span>
+                            TeachLinks 
+                            <span x-show="storageMode === 'cloud'" class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded font-mono">Cloud Synced</span>
+                            <span x-show="storageMode === 'guest'" class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">Guest Mode</span>
                         </h1>
                         <p class="text-[10px] text-slate-400">Classroom Resource Hub</p>
                     </div>
                 </div>
 
-                <!-- User Account / Google Sign-In Bar -->
+                <!-- User Account / Sign-In Bar / Guest Toggle -->
                 <div class="flex items-center gap-2">
-                    <template x-if="user && !user.isAnonymous">
+                    
+                    <!-- Cloud Auth Badge -->
+                    <template x-if="user && !user.isAnonymous && storageMode === 'cloud'">
                         <div class="flex items-center gap-2 bg-slate-800 border border-slate-700/80 px-2.5 py-1 rounded-xl">
                             <img :src="user.photoURL || 'https://placehold.co/100x100/6366f1/ffffff?text=U'" 
                                  class="w-6 h-6 rounded-full ring-2 ring-indigo-400 object-cover" 
@@ -165,7 +176,7 @@
                             <div class="text-left hidden sm:block">
                                 <p class="text-[11px] font-bold text-slate-200 leading-none truncate max-w-[120px]" x-text="user.displayName || 'Teacher'"></p>
                                 <p class="text-[9px] text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Cloud Synced
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Google Synced
                                 </p>
                             </div>
                             <button @click="googleSignOut()" 
@@ -176,13 +187,22 @@
                         </div>
                     </template>
 
-                    <template x-if="!user || user.isAnonymous">
+                    <!-- Google Sign In Button -->
+                    <template x-if="(!user || user.isAnonymous) || storageMode === 'guest'">
                         <button @click="googleSignIn()" 
-                                class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg active:scale-95">
+                                class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg active:scale-95">
                             <i class="fa-brands fa-google text-amber-300"></i>
                             <span>Sign in with Google</span>
                         </button>
                     </template>
+
+                    <!-- Backup / Import-Export Button in Guest Mode -->
+                    <button @click="showBackupModal = true" 
+                            class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
+                            title="Export or Import JSON Data Backup">
+                        <i class="fa-solid fa-file-export text-amber-400"></i>
+                        <span class="hidden md:inline">Backup</span>
+                    </button>
 
                     <!-- Student / Teacher Mode Toggle -->
                     <button @click="isTeacherMode = !isTeacherMode" 
@@ -228,12 +248,13 @@
             <div class="mobile-frame-container rounded-3xl overflow-hidden transition-all duration-300 min-h-[780px] flex flex-col border border-slate-800"
                  :class="getThemeContainerClass()">
                 
-                <!-- Simulated Mobile Device Header Bar -->
+                <!-- Mobile Device Status Bar Header -->
                 <div class="py-2.5 px-6 flex items-center justify-between text-xs opacity-60 border-b border-black/5 dark:border-white/5 select-none">
                     <span class="font-semibold text-[10px] tracking-widest uppercase flex items-center gap-1">
                         <i class="fa-solid fa-apple-whole text-indigo-400"></i> Classroom Bio Hub
                     </span>
                     <div class="flex items-center gap-1.5">
+                        <span x-show="storageMode === 'guest'" class="text-[9px] font-mono text-amber-400 mr-1"><i class="fa-solid fa-hard-drive"></i> Local</span>
                         <i class="fa-solid fa-wifi text-[10px]"></i>
                         <i class="fa-solid fa-battery-full text-[10px]"></i>
                     </div>
@@ -241,6 +262,7 @@
 
                 <div class="p-4 sm:p-6 flex-1 flex flex-col">
                     
+                    <!-- Teacher Profile Summary Header -->
                     <div class="text-center relative mb-6">
                         <button x-show="isTeacherMode" 
                                 @click="showProfileModal = true"
@@ -259,8 +281,10 @@
                                     <img :src="profile.avatarVal" @error="$el.src='https://placehold.co/100x100/6366f1/ffffff?text=Teacher'" class="w-full h-full object-cover" alt="Teacher Photo">
                                 </template>
                             </div>
-                            <span class="absolute bottom-1 right-1 bg-emerald-500 text-white p-1 rounded-full text-xs ring-2 ring-slate-900" title="Classroom Sync Active">
-                                <i class="fa-solid fa-check text-[10px]"></i>
+                            <span class="absolute bottom-1 right-1 p-1 rounded-full text-xs ring-2 ring-slate-900" 
+                                  :class="storageMode === 'cloud' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-slate-950'"
+                                  :title="storageMode === 'cloud' ? 'Cloud Sync Active' : 'Saved to Local Storage'">
+                                <i :class="storageMode === 'cloud' ? 'fa-solid fa-check text-[10px]' : 'fa-solid fa-hard-drive text-[10px]'"></i>
                             </span>
                         </div>
 
@@ -318,6 +342,7 @@
                                 </select>
                             </div>
 
+                            <!-- Color Selector Swatches + Hex Picker -->
                             <div>
                                 <div class="flex items-center justify-between mb-1.5">
                                     <label class="block text-[11px] font-semibold text-slate-300">Link Accent Color *</label>
@@ -385,11 +410,11 @@
                             <div class="text-center py-10 px-4 rounded-2xl border-2 border-dashed border-slate-700/50 opacity-60">
                                 <i class="fa-solid fa-folder-open text-3xl mb-2 text-indigo-400"></i>
                                 <p class="text-xs font-semibold">No links found in this category.</p>
-                                <p class="text-[11px] opacity-70 mt-1" x-show="isTeacherMode">Add a link using the top form above!</p>
+                                <p class="text-[11px] opacity-70 mt-1" x-show="isTeacherMode">Add a link using the form above!</p>
                             </div>
                         </template>
 
-                        <!-- Dynamic Link Cards (Each new link renders at the BOTTOM) -->
+                        <!-- Dynamic Link Cards -->
                         <template x-for="(link, index) in filteredLinks" :key="link.id">
                             <div class="group relative rounded-2xl transition-all duration-200 border transform active:scale-98 animate-pop-in shadow-md overflow-hidden"
                                  :style="{ borderColor: link.color + '60', backgroundColor: link.color + '12' }">
@@ -400,7 +425,7 @@
                                 <!-- Main Link Content Row -->
                                 <div class="p-3.5 pl-4 flex items-center justify-between gap-3">
                                     
-                                    <!-- Link Click Area (Always opens in new tab) -->
+                                    <!-- External Link Click Area -->
                                     <a :href="link.url" 
                                        target="_blank" 
                                        rel="noopener noreferrer" 
@@ -467,17 +492,94 @@
 
                     </div>
 
-                    <!-- Footer Sign-off -->
+                    <!-- Footer -->
                     <div class="mt-8 pt-4 border-t border-black/10 dark:border-white/10 text-center text-[11px] opacity-60">
                         <p x-text="profile.name + ' • Classroom Resource Bio'"></p>
-                        <p class="text-[9px] mt-0.5 opacity-80">All resources open in a new tab • Synced with Cloud</p>
+                        <p class="text-[9px] mt-0.5 opacity-80">All resources open in a new tab</p>
                     </div>
 
                 </div>
             </div>
         </main>
 
-        <!-- EDIT LINK MODAL -->
+        <div x-show="authErrorModal.show" 
+             x-transition.opacity 
+             class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+            
+            <div @click.away="authErrorModal.show = false" class="bg-slate-900 text-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-500/40">
+                <div class="flex items-start gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 text-xl">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-amber-300">Google Sign-In Restricted</h3>
+                        <p class="text-xs text-slate-400 mt-1" x-text="authErrorModal.message"></p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-[11px] space-y-1.5 font-mono text-slate-300 mb-5">
+                    <p><span class="text-slate-500">Reason:</span> Browser popup or iframe origin restriction.</p>
+                    <p><span class="text-slate-500">ErrorCode:</span> <span class="text-amber-400" x-text="authErrorModal.code"></span></p>
+                    <p class="text-[10px] text-slate-400 font-sans mt-2">
+                        Don't worry! You can use <strong>Guest / Local Storage Mode</strong> with full editing, color picking, QR code sharing, and JSON backup capabilities.
+                    </p>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <button @click="switchToGuestMode()" 
+                            class="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-bolt"></i> Continue in Guest / Local Storage Mode
+                    </button>
+                    <button @click="authErrorModal.show = false" 
+                            class="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition">
+                        Dismiss
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="showBackupModal" 
+             x-transition.opacity 
+             class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            
+            <div @click.away="showBackupModal = false" class="bg-slate-900 text-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-800">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-sm flex items-center gap-2 text-amber-400">
+                        <i class="fa-solid fa-file-export"></i> Backup & Restore Data
+                    </h3>
+                    <button @click="showBackupModal = false" class="text-slate-400 hover:text-white text-xs">
+                        <i class="fa-solid fa-xmark text-base"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Export JSON -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                        <h4 class="text-xs font-bold text-slate-200 mb-1">Export Teacher Profile & Links</h4>
+                        <p class="text-[11px] text-slate-400 mb-3">Download a copy of your current setup to transfer between browsers or devices.</p>
+                        <button @click="exportDataJson()" 
+                                class="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-2">
+                            <i class="fa-solid fa-download"></i> Download JSON File
+                        </button>
+                    </div>
+
+                    <!-- Import JSON -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                        <h4 class="text-xs font-bold text-slate-200 mb-1">Restore from JSON Backup</h4>
+                        <p class="text-[11px] text-slate-400 mb-2">Paste previously exported JSON data to restore your profile and resources.</p>
+                        <textarea x-model="importJsonText" 
+                                  placeholder="Paste JSON content here..." 
+                                  rows="3" 
+                                  class="w-full p-2.5 text-[11px] font-mono bg-slate-900 border border-slate-700 rounded-lg text-white mb-2 focus:outline-none focus:ring-1 focus:ring-amber-500"></textarea>
+                        <button @click="importDataJson()" 
+                                class="py-2 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg transition flex items-center gap-2">
+                            <i class="fa-solid fa-upload"></i> Restore & Apply Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div x-show="showEditModal" 
              x-transition.opacity 
              class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -544,7 +646,6 @@
             </div>
         </div>
 
-        <!-- EDIT PROFILE MODAL -->
         <div x-show="showProfileModal" 
              x-transition.opacity 
              class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -650,6 +751,7 @@
         function teachBioApp() {
             return {
                 isTeacherMode: true,
+                storageMode: 'guest', // 'cloud' or 'guest'
                 theme: 'modern',
                 activeCategory: 'All',
                 user: null,
@@ -657,7 +759,15 @@
                 showEditModal: false,
                 showProfileModal: false,
                 showQrModal: false,
+                showBackupModal: false,
+                importJsonText: '',
                 editingLink: null,
+
+                authErrorModal: {
+                    show: false,
+                    code: '',
+                    message: ''
+                },
 
                 toast: {
                     show: false,
@@ -740,13 +850,17 @@
                 ],
 
                 async initApp() {
+                    // Load local data fallback first if present
+                    this.loadFromLocalStorage();
+
                     // Check for Firebase Auth state changes
                     const checkFB = setInterval(() => {
                         if (window.FB && window.FB.auth) {
                             clearInterval(checkFB);
                             window.FB.auth.onAuthStateChanged(async (u) => {
                                 this.user = u;
-                                if (u) {
+                                if (u && !u.isAnonymous) {
+                                    this.storageMode = 'cloud';
                                     this.loadCloudBio(u.uid);
                                 }
                             });
@@ -756,26 +870,58 @@
                     this.profileForm = { ...this.profile };
                 },
 
-                // Google Sign In Handler
+                // Google Sign In Handler with Comprehensive Error Interception
                 async googleSignIn() {
-                    if (!window.FB) return;
-                    const provider = new window.FB.GoogleAuthProvider();
+                    if (!window.FB || !window.FB.auth) {
+                        this.showAuthError("AUTH_NOT_INIT", "Firebase authentication is not available in this context.");
+                        return;
+                    }
+
                     try {
+                        const provider = new window.FB.GoogleAuthProvider();
                         const res = await window.FB.signInWithPopup(window.FB.auth, provider);
+                        
                         this.user = res.user;
+                        this.storageMode = 'cloud';
+
                         if (res.user && res.user.displayName) {
                             this.profile.name = res.user.displayName;
                             if (res.user.photoURL) {
                                 this.profile.avatarType = 'image';
                                 this.profile.avatarVal = res.user.photoURL;
                             }
-                            this.saveToCloud();
+                            this.saveData();
                         }
                         this.showToast('Signed in with Google!');
                     } catch (err) {
-                        console.error("Google sign in error:", err);
-                        this.showToast('Google Sign-In failed or was closed');
+                        console.warn("Google Sign-In caught error:", err);
+                        
+                        let msg = "Google Sign-In was blocked or interrupted.";
+                        if (err.code === 'auth/unauthorized-domain') {
+                            msg = "This app origin/iframe domain is not authorized in the Firebase console.";
+                        } else if (err.code === 'auth/popup-blocked') {
+                            msg = "The sign-in popup was blocked by your browser settings or iframe container.";
+                        } else if (err.code === 'auth/popup-closed-by-user') {
+                            msg = "The sign-in window was closed before completing.";
+                        } else if (err.code === 'auth/operation-not-allowed') {
+                            msg = "Google Auth provider is not enabled in Firebase project settings.";
+                        }
+
+                        this.showAuthError(err.code || 'auth/restricted-iframe', msg);
                     }
+                },
+
+                showAuthError(code, message) {
+                    this.authErrorModal.code = code;
+                    this.authErrorModal.message = message;
+                    this.authErrorModal.show = true;
+                },
+
+                switchToGuestMode() {
+                    this.authErrorModal.show = false;
+                    this.storageMode = 'guest';
+                    this.saveToLocalStorage();
+                    this.showToast('Switched to Guest / Local Mode! All edits will save to this browser.');
                 },
 
                 // Sign Out Handler
@@ -783,13 +929,14 @@
                     if (!window.FB) return;
                     try {
                         await window.FB.signOut(window.FB.auth);
+                        this.storageMode = 'guest';
                         this.showToast('Signed out successfully');
                     } catch(err) {
                         console.error(err);
                     }
                 },
 
-                // Firestore Document Listener (RULE 1 & RULE 3 strictly followed)
+                // Firestore Listener
                 loadCloudBio(userId) {
                     if (!window.FB || !userId) return;
                     const userDocRef = window.FB.doc(window.FB.db, 'artifacts', window.FB.appId, 'users', userId, 'config', 'bioData');
@@ -802,15 +949,22 @@
                             if (data.theme) this.theme = data.theme;
                             this.profileForm = { ...this.profile };
                         } else {
-                            // Initial Cloud Sync
-                            this.saveToCloud();
+                            this.saveData();
                         }
                     }, (err) => {
-                        console.error("Firestore snapshot error:", err);
+                        console.warn("Firestore snapshot restricted, falling back to local mode:", err);
+                        this.storageMode = 'guest';
                     });
                 },
 
-                // Cloud Persistence Save
+                saveData() {
+                    if (this.storageMode === 'cloud' && this.user && !this.user.isAnonymous) {
+                        this.saveToCloud();
+                    } else {
+                        this.saveToLocalStorage();
+                    }
+                },
+
                 async saveToCloud() {
                     if (!window.FB || !this.user) return;
                     const userId = this.user.uid;
@@ -822,21 +976,80 @@
                     };
 
                     try {
-                        // User private storage path
                         const userDocRef = window.FB.doc(window.FB.db, 'artifacts', window.FB.appId, 'users', userId, 'config', 'bioData');
                         await window.FB.setDoc(userDocRef, payload, { merge: true });
 
-                        // Public share storage path
                         const publicDocRef = window.FB.doc(window.FB.db, 'artifacts', window.FB.appId, 'public', 'data', 'teachers', userId);
                         await window.FB.setDoc(publicDocRef, payload, { merge: true });
                     } catch (err) {
-                        console.error("Save to Firestore failed:", err);
+                        console.warn("Cloud save issue, saving locally:", err);
+                        this.saveToLocalStorage();
+                    }
+                },
+
+                saveToLocalStorage() {
+                    try {
+                        const payload = {
+                            profile: this.profile,
+                            links: this.links,
+                            theme: this.theme,
+                            updatedAt: new Date().toISOString()
+                        };
+                        localStorage.setItem('teachlinks_guest_data', JSON.stringify(payload));
+                    } catch(e) {
+                        console.warn("LocalStorage save error:", e);
+                    }
+                },
+
+                loadFromLocalStorage() {
+                    try {
+                        const saved = localStorage.getItem('teachlinks_guest_data');
+                        if (saved) {
+                            const data = JSON.parse(saved);
+                            if (data.profile) this.profile = data.profile;
+                            if (data.links) this.links = data.links;
+                            if (data.theme) this.theme = data.theme;
+                        }
+                    } catch(e) {}
+                },
+
+                exportDataJson() {
+                    const payload = {
+                        profile: this.profile,
+                        links: this.links,
+                        theme: this.theme,
+                        exportedAt: new Date().toISOString()
+                    };
+                    const jsonStr = JSON.stringify(payload, null, 2);
+                    const blob = new Blob([jsonStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'teacher-links-backup.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    this.showToast('JSON backup file downloaded!');
+                },
+
+                importDataJson() {
+                    if (!this.importJsonText.trim()) return;
+                    try {
+                        const data = JSON.parse(this.importJsonText);
+                        if (data.profile) this.profile = data.profile;
+                        if (data.links && Array.isArray(data.links)) this.links = data.links;
+                        if (data.theme) this.theme = data.theme;
+                        this.saveData();
+                        this.importJsonText = '';
+                        this.showBackupModal = false;
+                        this.showToast('Backup restored successfully!');
+                    } catch(e) {
+                        this.showToast('Invalid JSON format!');
                     }
                 },
 
                 setTheme(themeName) {
                     this.theme = themeName;
-                    this.saveToCloud();
+                    this.saveData();
                     this.showToast(`Theme changed to ${themeName}`);
                 },
 
@@ -854,7 +1067,6 @@
                     }
                 },
 
-                // Filtered Links Computed
                 get filteredLinks() {
                     if (this.activeCategory === 'All') return this.links;
                     return this.links.filter(l => l.category === this.activeCategory);
@@ -879,7 +1091,7 @@
 
                     // Appends link to BOTTOM of list
                     this.links.push(item);
-                    this.saveToCloud();
+                    this.saveData();
 
                     // Reset Form
                     this.newLink.title = '';
@@ -889,7 +1101,6 @@
                     this.showToast('New link appended to bottom!');
                 },
 
-                // Link Reordering Controls
                 moveLink(id, direction) {
                     const idx = this.links.findIndex(l => l.id === id);
                     if (idx === -1) return;
@@ -903,17 +1114,15 @@
                         this.links[idx] = this.links[idx + 1];
                         this.links[idx + 1] = temp;
                     }
-                    this.saveToCloud();
+                    this.saveData();
                 },
 
-                // Delete Link
                 deleteLink(id) {
                     this.links = this.links.filter(l => l.id !== id);
-                    this.saveToCloud();
+                    this.saveData();
                     this.showToast('Resource link deleted');
                 },
 
-                // Edit Link Modal
                 openEditModal(link) {
                     this.editingLink = JSON.parse(JSON.stringify(link));
                     this.showEditModal = true;
@@ -924,26 +1133,24 @@
                     const idx = this.links.findIndex(l => l.id === this.editingLink.id);
                     if (idx !== -1) {
                         this.links[idx] = { ...this.editingLink };
-                        this.saveToCloud();
+                        this.saveData();
                         this.showToast('Link details updated');
                     }
                     this.showEditModal = false;
                 },
 
-                // Edit Profile
                 saveProfile() {
                     this.profile = { ...this.profileForm };
-                    this.saveToCloud();
+                    this.saveData();
                     this.showProfileModal = false;
                     this.showToast('Profile updated!');
                 },
 
-                // Register Link Click
                 registerClick(id) {
                     const idx = this.links.findIndex(l => l.id === id);
                     if (idx !== -1) {
                         this.links[idx].clicks = (this.links[idx].clicks || 0) + 1;
-                        this.saveToCloud();
+                        this.saveData();
                     }
                 },
 
